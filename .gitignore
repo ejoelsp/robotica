@@ -1,0 +1,11 @@
+
+/.env
+/node_modules
+/frontend/node_modules
+/backend/vendor
+/backend/storage
+/backend/public/build
+/backend/.env
+.DS_Store
+.idea
+.vscode
