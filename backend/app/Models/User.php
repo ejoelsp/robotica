@@ -33,7 +33,7 @@ class User extends Authenticatable implements JWTSubject
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
-        //Importante: NO usar 'password' => 'hashed' si vamos a hacer Hash::make manual
+        
     ];
 
     // Requeridos por JWT
