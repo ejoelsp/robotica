@@ -39,10 +39,17 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => fn () => $request->user(),
             ],
+
+            'loginError' => fn () => $request->session()->get('loginError'),
+
+            // Mensajes flash globales (opcional)
             'flash' => [
                 'success' => fn () => $request->session()->get('success'),
+                'error'   => fn () => $request->session()->get('error'),
             ],
-            // aquí puedes compartir más cosas globales si quieres
         ]);
     }
+
+
+
 }

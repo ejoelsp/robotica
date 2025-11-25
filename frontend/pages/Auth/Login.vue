@@ -1,27 +1,48 @@
-
 <script setup>
-import { ref } from 'vue';
-import { Link, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
 import AppLayout from '../../layouts/AppLayout.vue';
 
+
+const throttleError = ref('');
+
+// Inertia form (para enviar el POST)
 const form = useForm({
   email: '',
   password: '',
   remember: false,
 });
 
-const generalError = ref('');
+// Props de la página que vienen desde el backend
+const page = usePage();
+
+// Leemos el loginError que mandamos desde el controlador
+const loginError = computed(() => page.props.loginError || '');
+
+// Si quieres recuperar el email que mandamos en "old"
+const old = computed(() => page.props.old || {});
+
+// Cuando se monte el componente, si hay old.email lo ponemos
+if (old.value.email) {
+  form.email = old.value.email;
+  form.remember = !!old.value.remember;
+}
 
 const onSubmit = () => {
-  generalError.value = '';
-  form.clearErrors();
+  throttleError.value = ''; // limpiamos el error de bloqueo
 
   form.post('/login', {
     preserveScroll: true,
+
     onError: (errors) => {
-      // Si el backend devolvió un error general por email
-      if (errors.email && errors.email.includes('credenciales')) {
-        generalError.value = errors.email;
+      // Aquí intentamos capturar el error que manda el throttle (429)
+      // Laravel normalmente manda algo como { message: "Too Many Attempts." }
+      if (errors && errors.message) {
+        const msg = Array.isArray(errors.message) ? errors.message[0] : errors.message;
+
+        // Puedes mostrarlo tal cual o traducirlo a algo amigable:
+        throttleError.value = 'Has excedido el número de intentos. Intenta de nuevo en un momento.';
+        console.log('Throttle error:', msg);
       }
     },
   });
@@ -39,6 +60,22 @@ const onSubmit = () => {
           Accede a tu cuenta para gestionar competencias, inscripciones y resultados.
         </p>
 
+        <!-- BLOQUE ROJO DE ERROR GENERAL (FUERA DEL FORMULARIO) -->
+        <div
+          v-if="loginError"
+          class="mb-4 rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-700"
+        >
+          {{ loginError }}
+        </div>
+
+        <!-- BLOQUE NARANJA PARA BLOQUEO POR INTENTOS (THROTTLE) -->
+        <div
+        v-if="throttleError"
+        class="mb-4 rounded-lg bg-orange-50 border border-orange-200 px-3 py-2 text-xs text-orange-700"
+        >
+        {{ throttleError }}
+        </div>
+
         <form @submit.prevent="onSubmit" class="space-y-4">
           <!-- Email -->
           <div>
@@ -51,12 +88,8 @@ const onSubmit = () => {
               type="email"
               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
               autocomplete="email"
             />
-            <p v-if="form.errors.email" class="mt-1 text-xs text-red-500">
-              {{ form.errors.email }}
-            </p>
           </div>
 
           <!-- Password -->
@@ -70,12 +103,8 @@ const onSubmit = () => {
               type="password"
               class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
                      focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
               autocomplete="current-password"
             />
-            <p v-if="form.errors.password" class="mt-1 text-xs text-red-500">
-              {{ form.errors.password }}
-            </p>
           </div>
 
           <!-- Recordarme -->
@@ -95,11 +124,6 @@ const onSubmit = () => {
             >
               ¿Olvidaste tu contraseña?
             </button>
-          </div>
-
-          <!-- Error general -->
-          <div v-if="generalError" class="text-xs text-red-500">
-            {{ generalError }}
           </div>
 
           <!-- Botón -->
@@ -123,4 +147,3 @@ const onSubmit = () => {
     </section>
   </AppLayout>
 </template>
-
