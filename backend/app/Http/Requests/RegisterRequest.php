@@ -3,7 +3,6 @@
 namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
-use Illuminate\Validation\Rule;
 
 class RegisterRequest extends FormRequest
 {
@@ -18,36 +17,36 @@ class RegisterRequest extends FormRequest
             'name' => [
                 'required',
                 'string',
-                'max:150',
-                'regex:/^[\pL\s]+$/u', // solo letras y espacios
+                'max:30',
+                'regex:/^[A-ZÑ\s]+$/',
+            ],
+            'last_name' => [
+                'required',
+                'string',
+                'max:30',
+                'regex:/^[A-ZÑ\s]+$/',
             ],
             'email' => [
                 'required',
                 'string',
                 'email',
-                'max:255',
-                Rule::unique('users', 'email'),
+                'max:150',
             ],
             'telefono' => [
-                'required',
+                'nullable',
                 'string',
-                'max:30',
-                'regex:/^\+\d{8,20}$/', // +593 seguido de 8–20 dígitos
-            ],
-            'institucion' => [
-                'required',
-                'string',
-                'max:150',
+                'max:20',
+                'regex:/^\+\d{8,20}$/',
             ],
             'password' => [
                 'required',
                 'string',
                 'min:8',
                 'confirmed',
-                'regex:/[A-Z]/',        // mayúscula
-                'regex:/[a-z]/',        // minúscula
-                'regex:/[0-9]/',        // número
-                'regex:/[^A-Za-z0-9]/', // carácter especial
+                'regex:/[A-Z]/',
+                'regex:/[a-z]/',
+                'regex:/[0-9]/',
+                'regex:/[^A-Za-z0-9]/',
             ],
         ];
     }
@@ -55,8 +54,10 @@ class RegisterRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.regex' => 'El nombre solo puede contener letras y espacios.',
-            'email.unique' => 'Este correo ya está registrado.',
+            'name.required' => 'El nombre es obligatorio.',
+            'name.regex' => 'El nombre solo puede contener letras mayúsculas sin tildes y la letra Ñ.',
+            'last_name.required' => 'El apellido es obligatorio.',
+            'last_name.regex' => 'El apellido solo puede contener letras mayúsculas sin tildes y la letra Ñ.',
             'telefono.regex' => 'El teléfono debe incluir el prefijo (+) y solo dígitos.',
             'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
             'password.confirmed' => 'Las contraseñas no coinciden.',

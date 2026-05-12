@@ -1,13 +1,12 @@
 <script setup>
 import { Link } from '@inertiajs/vue3';
-import AppLayout from '../layouts/AppLayout.vue';
+// import AppLayout from '../layouts/AppLayout.vue';
 import torneo from '../assets/logos/torneo.png';
 
 </script>
 
 
 <template>
-  <AppLayout>
     <!-- HERO principal -->
     <section class="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-10 py-20 px-6">
       
@@ -29,11 +28,12 @@ import torneo from '../assets/logos/torneo.png';
           >
             Ver próximas competencias
           </Link>
-          <button
+          <Link
+            href="/resultados"
             class="px-6 py-3 rounded-md border border-slate-300 text-sm text-slate-700 hover:bg-slate-50"
           >
-            Ver resultados en vivo
-          </button>
+            Ver resultados
+          </Link>
         </div>
       </div>
 
@@ -54,6 +54,5 @@ import torneo from '../assets/logos/torneo.png';
       </div>
 
     </section>
-  </AppLayout>
 </template>
 

@@ -3,6 +3,8 @@
 namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
@@ -10,17 +12,10 @@ class HandleInertiaRequests extends Middleware
     /**
      * The root template that's loaded on the first page visit.
      *
-     * @see https://inertiajs.com/server-side-setup#root-template
-     *
      * @var string
      */
     protected $rootView = 'app';
 
-    /**
-     * Determines the current asset version.
-     *
-     * @see https://inertiajs.com/asset-versioning
-     */
     public function version(Request $request): ?string
     {
         return parent::version($request);
@@ -28,28 +23,42 @@ class HandleInertiaRequests extends Middleware
 
     /**
      * Define the props that are shared by default.
-     *
-     * @see https://inertiajs.com/shared-data
-     *
-     * @return array<string, mixed>
      */
-     public function share(Request $request): array
+    public function share(Request $request): array
     {
         return array_merge(parent::share($request), [
-            'auth' => [
-                'user' => fn () => $request->user(),
-            ],
+            'errors' => fn () => (object) collect(
+                $request->session()->get('errors')?->getBag('default')->messages() ?? []
+            )->map(fn (array $messages) => $messages[0] ?? null)->toArray(),
+
+            'auth.user' => fn () => $request->user()
+                ? [
+                    'id' => $request->user()->id,
+                    'name' => $request->user()->name,
+                    'last_name' => $request->user()->last_name,
+                    'email' => $request->user()->email,
+                    'telefono' => $request->user()->telefono,
+                    'role_id' => $request->user()->role_id,
+                    'photo_path' => $request->user()->photo_path,
+                    'photo_url' => $request->user()->photo_path
+                        ? Storage::url($request->user()->photo_path)
+                        : null,
+                ]
+                : null,
+
+            'competenciaActual' => fn () => $request->session()->get('competenciaActual')
+                ?? DB::table('catalogo.competencias')
+                    ->where('estado', true)
+                    ->select([
+                        'id',
+                        'nombre',
+                    ])
+                    ->first(),
 
             'loginError' => fn () => $request->session()->get('loginError'),
 
-            // Mensajes flash globales (opcional)
-            'flash' => [
-                'success' => fn () => $request->session()->get('success'),
-                'error'   => fn () => $request->session()->get('error'),
-            ],
+            'flash.success' => fn () => $request->session()->get('success'),
+            'flash.error' => fn () => $request->session()->get('error'),
         ]);
     }
-
-
-
 }

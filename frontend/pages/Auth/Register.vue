@@ -1,26 +1,31 @@
 <template>
-  <AppLayout>
-    <section class="min-h-[70vh] flex items-center justify-center px-4">
-      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-        <h1 class="text-2xl font-semibold text-slate-900 mb-2">
-          Crear cuenta
-        </h1>
-        <p class="text-sm text-slate-500 mb-6">
-          Regístrate para gestionar tus competencias, inscripciones y resultados del evento.
-        </p>
+  <section class="min-h-[70vh] flex items-center justify-center px-4">
+    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
+      <h1 class="mb-2 text-2xl font-semibold text-slate-900">
+        Crear cuenta
+      </h1>
+      <p class="mb-4 text-sm text-slate-500">
+        Regístrate para gestionar tus competencias, inscripciones y resultados del evento.
+      </p>
 
-        <form @submit.prevent="onSubmit" class="space-y-4">
-          <!-- Nombre completo -->
+      <div
+        v-if="registerError"
+        class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+      >
+        {{ registerError }}
+      </div>
+
+      <form class="space-y-4" @submit.prevent="onSubmit">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1" for="name">
-              Nombre completo
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="name">
+              Nombre(s)
             </label>
             <input
-              v-model="form.name"
               id="name"
+              v-model="form.name"
               type="text"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
               @input="sanitizeName"
             />
@@ -29,237 +34,164 @@
             </p>
           </div>
 
-          <!-- Correo electrónico -->
           <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1" for="email">
-              Correo electrónico
+            <label class="mb-1 block text-sm font-medium text-slate-700" for="last_name">
+              Apellido(s)
             </label>
             <input
-              v-model="form.email"
-              id="email"
-              type="email"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-            />
-            <p v-if="form.errors.email" class="mt-1 text-xs text-red-500">
-              {{ form.errors.email }}
-            </p>
-          </div>
-
-          <!-- Teléfono con combo país -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1">
-              Teléfono
-            </label>
-
-            <div class="flex gap-2">
-              <!-- País -->
-              <select
-                v-model="country"
-                class="rounded-md border border-slate-300 px-2 py-2 text-sm bg-white
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              >
-                <option
-                  v-for="c in countries"
-                  :key="c.code"
-                  :value="c.code"
-                >
-                  {{ c.flag }} {{ c.name }} ({{ c.prefix }})
-                </option>
-              </select>
-
-              <!-- Prefijo solo lectura -->
-              <div
-                class="px-3 py-2 rounded-md border border-slate-300 bg-slate-50 text-sm text-slate-700 flex items-center"
-              >
-                {{ currentPrefix }}
-              </div>
-
-              <!-- Número -->
-              <input
-                v-model="phoneNumber"
-                type="text"
-                class="flex-1 min-w-0 rounded-md border border-slate-300 py-2 pl-3 text-sm
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                :placeholder="`Número (${currentMaxDigits} dígitos)`"
-                @input="onPhoneInput"
-                required
-              />
-            </div>
-
-            <p v-if="phoneError" class="mt-1 text-xs text-red-500">
-              {{ phoneError }}
-            </p>
-            <p v-else-if="form.errors.telefono" class="mt-1 text-xs text-red-500">
-              {{ form.errors.telefono }}
-            </p>
-          </div>
-
-          <!-- Institución -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1" for="institution">
-              Institución
-            </label>
-            <input
-              v-model="form.institucion"
-              id="institution"
+              id="last_name"
+              v-model="form.last_name"
               type="text"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="escuela, colegio, universidad, etc."
+              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
-              @input="onInstitutionInput"
+              @input="sanitizeLastName"
             />
-            <p v-if="form.errors.institucion" class="mt-1 text-xs text-red-500">
-              {{ form.errors.institucion }}
+            <p v-if="form.errors.last_name" class="mt-1 text-xs text-red-500">
+              {{ form.errors.last_name }}
             </p>
           </div>
+        </div>
 
-          <!-- Contraseña -->
-          <div>
-            <label class="block text-sm font-medium text-slate-700 mb-1" for="password">
-              Contraseña
-            </label>
-            <input
-              v-model="form.password"
-              id="password"
-              type="password"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-              @input="passwordTouched = true"
-            />
-            <!-- Reglas de contraseña -->
-            <ul class="mt-2 space-y-1 text-xs">
-              <li :class="ruleClass(passwordLengthOk)">
-                • Mínimo 8 caracteres
-              </li>
-              <li :class="ruleClass(passwordHasUpper)">
-                • Al menos una letra mayúscula
-              </li>
-              <li :class="ruleClass(passwordHasLower)">
-                • Al menos una letra minúscula
-              </li>
-              <li :class="ruleClass(passwordHasNumber)">
-                • Al menos un número
-              </li>
-              <li :class="ruleClass(passwordHasSpecial)">
-                • Al menos un carácter especial (!@#$%^&amp;*, etc.)
-              </li>
-            </ul>
-            <p v-if="form.errors.password" class="mt-1 text-xs text-red-500">
-              {{ form.errors.password }}
-            </p>
-          </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-slate-700" for="email">
+            Correo electrónico
+          </label>
+          <input
+            id="email"
+            v-model="form.email"
+            type="email"
+            :class="[
+              'w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 border',
+              form.errors.email
+                ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500',
+            ]"
+            required
+          />
+          <p v-if="form.errors.email" class="mt-1 text-xs text-red-500">
+            {{ form.errors.email }}
+          </p>
+        </div>
 
-          <!-- Confirmar contraseña -->
-          <div>
-            <label
-              class="block text-sm font-medium text-slate-700 mb-1"
-              for="password_confirmation"
-            >
-              Confirmar contraseña
-            </label>
-            <input
-              v-model="form.password_confirmation"
-              id="password_confirmation"
-              type="password"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              required
-            />
-            <p v-if="form.password_confirmation && !passwordsMatch" class="mt-1 text-xs text-red-500">
-              Las contraseñas no coinciden.
-            </p>
-          </div>
+        <div>
+          <label class="mb-1 block text-sm font-medium text-slate-700" for="password">
+            Contraseña
+          </label>
+          <input
+            id="password"
+            v-model="form.password"
+            type="password"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <ul class="mt-2 space-y-1 text-xs">
+            <li :class="ruleClass(passwordLengthOk)">
+              • Mínimo 8 caracteres
+            </li>
+            <li :class="ruleClass(passwordHasUpper)">
+              • Al menos una letra mayúscula
+            </li>
+            <li :class="ruleClass(passwordHasLower)">
+              • Al menos una letra minúscula
+            </li>
+            <li :class="ruleClass(passwordHasNumber)">
+              • Al menos un número
+            </li>
+            <li :class="ruleClass(passwordHasSpecial)">
+              • Al menos un carácter especial (!@#$%^&*, etc.)
+            </li>
+          </ul>
+          <p v-if="form.errors.password" class="mt-1 text-xs text-red-500">
+            {{ form.errors.password }}
+          </p>
+        </div>
 
-          <!-- Error general frontend -->
-          <div v-if="formError" class="text-xs text-red-500">
-            {{ formError }}
-          </div>
-
-          <!-- Botón -->
-          <button
-            type="submit"
-            class="w-full rounded-md bg-black text-white py-2.5 text-sm font-semibold hover:bg-slate-900 disabled:opacity-60"
-            :disabled="form.processing"
+        <div>
+          <label
+            class="mb-1 block text-sm font-medium text-slate-700"
+            for="password_confirmation"
           >
-            <span v-if="!form.processing">Registrarme</span>
-            <span v-else>Registrando...</span>
-          </button>
-        </form>
+            Confirmar contraseña
+          </label>
+          <input
+            id="password_confirmation"
+            v-model="form.password_confirmation"
+            type="password"
+            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <p v-if="form.password_confirmation && !passwordsMatch" class="mt-1 text-xs text-red-500">
+            Las contraseñas no coinciden.
+          </p>
+        </div>
 
-        <p class="mt-6 text-xs text-center text-slate-500">
-          ¿Ya tienes cuenta?
-          <Link href="/login" class="text-blue-600 hover:underline font-medium">
-            Inicia sesión aquí
-          </Link>
-        </p>
-      </div>
-    </section>
-  </AppLayout>
+        <div v-if="formError" class="text-xs text-red-500">
+          {{ formError }}
+        </div>
+
+        <button
+          type="submit"
+          class="w-full rounded-md bg-black py-2.5 text-sm font-semibold text-white hover:bg-slate-900 disabled:opacity-60"
+          :disabled="form.processing"
+        >
+          <span v-if="!form.processing">Registrarme</span>
+          <span v-else>Registrando...</span>
+        </button>
+      </form>
+
+      <p class="mt-6 text-center text-xs text-slate-500">
+        ¿Ya tienes cuenta?
+        <Link href="/login" class="font-medium text-blue-600 hover:underline">
+          Inicia sesión aquí
+        </Link>
+      </p>
+    </div>
+  </section>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
-import { Link, useForm } from '@inertiajs/vue3';
-import AppLayout from '../../layouts/AppLayout.vue';
+import { computed, ref } from 'vue';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
 
-// ==== FORMULARIO INERTIA ====
 const form = useForm({
   name: '',
+  last_name: '',
   email: '',
-  institucion: '',
-  telefono: '',
   password: '',
   password_confirmation: '',
 });
 
-// ==== CAMPOS AUXILIARES (NO VAN DIRECTO A BD) ====
+const page = usePage();
+const registerError = computed(() => page.props.registerError || '');
+const old = computed(() => page.props.old || {});
 
-// País seleccionado y configuración
-const countries = [
-  {
-    code: 'EC',
-    name: 'Ecuador',
-    prefix: '+593',
-    maxDigits: 9,
-    flag: '🇪🇨',
-  },
-  // Aquí luego puedes agregar más países si lo necesitas
-];
+if (old.value.name) {
+  form.name = old.value.name;
+}
+if (old.value.last_name) {
+  form.last_name = old.value.last_name;
+}
+if (old.value.email) {
+  form.email = old.value.email;
+}
 
-const country = ref('EC');          // Ecuador por defecto
-const phoneNumber = ref('');        // Solo los dígitos del número
-const phoneError = ref('');
 const formError = ref('');
-const passwordTouched = ref(false);
-
-// País actual según selección
-const currentCountry = computed(
-  () => countries.find((c) => c.code === country.value) ?? countries[0]
-);
-
-const currentPrefix = computed(() => currentCountry.value.prefix);
-const currentMaxDigits = computed(() => currentCountry.value.maxDigits);
-
-// ==== NOMBRE Y INSTITUCIÓN ====
-
-// Quita números y símbolos, deja solo letras y espacios, y lo pasa a mayúsculas
 const sanitizeName = () => {
   form.name = form.name
-    .replace(/[^A-Za-zÁÉÍÓÚáéíóúÑñ\s]/g, '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-zÑñ\s]/g, '')
     .toUpperCase();
 };
 
-const onInstitutionInput = () => {
-  form.institucion = form.institucion.toUpperCase();
+const sanitizeLastName = () => {
+  form.last_name = form.last_name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-zÑñ\s]/g, '')
+    .toUpperCase();
 };
 
-// ==== CONTRASEÑA: REGLAS DE SEGURIDAD ====
-
-// Reglas de contraseña basadas en form.password
 const passwordLengthOk = computed(() => form.password.length >= 8);
 const passwordHasUpper = computed(() => /[A-Z]/.test(form.password));
 const passwordHasLower = computed(() => /[a-z]/.test(form.password));
@@ -273,44 +205,12 @@ const passwordsMatch = computed(
     form.password === form.password_confirmation
 );
 
-// Clase CSS para cada regla de contraseña
-const ruleClass = (ok) => {
-  return ok ? 'text-green-600' : 'text-slate-500';
-};
+const ruleClass = (ok) => (ok ? 'text-green-600' : 'text-slate-500');
 
-// ==== TELÉFONO: SOLO NÚMEROS Y LONGITUD CORRECTA ====
-const onPhoneInput = () => {
-  // Eliminar todo lo que no sea dígito
-  phoneNumber.value = phoneNumber.value.replace(/\D/g, '');
-
-  // Limitar la cantidad de dígitos
-  if (phoneNumber.value.length > currentMaxDigits.value) {
-    phoneNumber.value = phoneNumber.value.slice(0, currentMaxDigits.value);
-  }
-
-  // Mensaje de error local
-  phoneError.value = '';
-  if (
-    phoneNumber.value.length > 0 &&
-    phoneNumber.value.length < currentMaxDigits.value
-  ) {
-    phoneError.value = `El número debe tener exactamente ${currentMaxDigits.value} dígitos.`;
-  }
-};
-
-// ==== ENVÍO DEL FORMULARIO (FRONTEND + BACKEND) ====
 const onSubmit = () => {
   formError.value = '';
-  phoneError.value = '';
   form.clearErrors();
 
-  // 1) Validación de teléfono a nivel frontend
-  if (phoneNumber.value.length !== currentMaxDigits.value) {
-    phoneError.value = `El número debe tener exactamente ${currentMaxDigits.value} dígitos.`;
-    return;
-  }
-
-  // 2) Validación de contraseña a nivel frontend
   if (
     !passwordLengthOk.value ||
     !passwordHasUpper.value ||
@@ -328,27 +228,11 @@ const onSubmit = () => {
     return;
   }
 
-  // 3) Armar el teléfono completo para la BD: +593 + número
-  const fullPhone = `${currentPrefix.value}${phoneNumber.value}`;
-  form.telefono = fullPhone;
-
-  // 4) Normalizar nombre e institución (por si acaso, aunque ya hay validaciones)
   form.name = form.name.toUpperCase();
-  form.institucion = form.institucion.toUpperCase();
+  form.last_name = form.last_name.toUpperCase();
 
-  // 5) Enviar al backend usando Inertia
   form.post('/register', {
     preserveScroll: true,
-    onError: () => {
-      // Los mensajes están en form.errors.<campo>
-      // Ej: form.errors.email, form.errors.telefono, etc.
-      // Aquí no hace falta hacer nada extra, ya los mostramos en el template.
-    },
-    onSuccess: () => {
-      // Si el backend redirige al dashboard, aquí casi no se nota
-      // Podrías limpiar campos si te quedaras en la misma página.
-      // phoneNumber.value = '';
-    },
   });
 };
 </script>

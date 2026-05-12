@@ -12,7 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'juez.profile.completed' => \App\Http\Middleware\EnsureJuezProfileCompleted::class,
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //

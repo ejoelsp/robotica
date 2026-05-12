@@ -1,28 +1,37 @@
 <script setup>
-import { Link, router, usePage } from '@inertiajs/vue3';
+import { Link, router, usePage } from '@inertiajs/vue3'
 
-const page = usePage();
-const user = page.props.auth?.user ?? { name: 'Usuario' };
+// ICONOS
+import {
+  Squares2X2Icon,
+  BellAlertIcon,
+  ClipboardDocumentListIcon,
+  PresentationChartBarIcon,
+  UserCircleIcon,
+  ArrowRightStartOnRectangleIcon,
+} from '@heroicons/vue/24/outline'
 
-// URL actual, por ejemplo "/dashboard" o "/profile"
-const currentUrl = page.url;
+const page = usePage()
+const user = page.props.auth?.user ?? { name: 'Usuario' }
 
-// Logout: usamos directamente la URL, sin route()
 const logout = () => {
-  router.post('/logout');
-};
+  router.post('/logout')
+}
 </script>
 
 <template>
-  <div class="flex min-h-screen bg-slate-100">
+  <!-- Sidebar fijo, contenido con scroll -->
+  <div class="flex h-screen bg-slate-100 overflow-hidden">
     <!-- SIDEBAR -->
-    <aside class="w-68 bg-white border-r border-slate-200 px-5 py-8 flex flex-col">
-      <!-- Logo -->
+    <aside
+      class="w-72 bg-white border-r border-slate-200 px-5 py-8 flex flex-col"
+    >
+      <!-- Logo (como la imagen: gradiente + trofeo) -->
       <div class="flex items-center gap-3 mb-8">
         <div
-          class="h-10 w-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white text-xl font-bold"
+          class="h-10 w-10 rounded-2xl bg-gradient-to-tr from-purple-500 to-blue-500 flex items-center justify-center text-white text-xl"
         >
-          🤖
+          🏆
         </div>
         <div>
           <p class="text-sm font-semibold text-slate-900 leading-tight">
@@ -43,41 +52,53 @@ const logout = () => {
             {{ user.name.charAt(0).toUpperCase() }}
           </div>
           <div>
-            <p class="text-xs text-slate-500">Hola, {{ user.name.split(' ')[0] }}!</p>
-            <p class="text-xs font-semibold text-blue-700">Competidor</p>
+            <p class="text-xs text-slate-500">
+              Hola, {{ user.name.split(' ')[0] }}!
+            </p>
+            <p class="text-xs font-semibold text-blue-700">
+              Competidor
+            </p>
           </div>
         </div>
       </div>
 
-      <!-- Menú -->
-      <nav class="flex-1 space-y-1 text-sm font-medium">
+      <!-- Menú principal -->
+      <nav class="space-y-1 text-sm font-medium">
         <!-- Dashboard -->
         <Link
           href="/dashboard"
           :class="[
             'flex items-center gap-3 px-3 py-2 rounded-xl',
-            currentUrl.startsWith('/dashboard')
-              ? 'bg-blue-50 text-blue-700'
-              : 'text-slate-600 hover:bg-slate-50'
+            page.url.startsWith('/dashboard')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
           ]"
         >
-          Dashboard
-        </Link>
-
-        <!-- Próximas Competencias -->
-        <Link
-          href="#"
-          class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50"
-        >
-          Próximas Competencias
+          <Squares2X2Icon class="w-5 h-5" />
+          <span>Dashboard</span>
         </Link>
 
         <!-- Mis Inscripciones -->
         <Link
+          href="/competidor/mis-inscripciones"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/competidor/mis-inscripciones')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+          ]"
+        >
+          <ClipboardDocumentListIcon class="w-5 h-5" />
+          <span>Mis Inscripciones</span>
+        </Link>
+
+        <!-- Notificaciones -->
+        <Link
           href="#"
           class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50"
         >
-          Mis Inscripciones
+          <BellAlertIcon class="w-5 h-5" />
+          <span>Notificaciones</span>
         </Link>
 
         <!-- Resultados -->
@@ -85,30 +106,36 @@ const logout = () => {
           href="#"
           class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50"
         >
-          Resultados
+          <PresentationChartBarIcon class="w-5 h-5" />
+          <span>Resultados</span>
         </Link>
+      </nav>
 
+      <!-- Zona inferior fija -->
+      <div class="mt-auto pt-4 border-t border-slate-200">
         <!-- Mi Perfil -->
         <Link
           href="/profile"
           :class="[
-            'mt-4 flex items-center gap-3 px-3 py-2 rounded-xl',
-            currentUrl.startsWith('/profile')
-              ? 'bg-slate-900 text-white'
-              : 'text-slate-600 hover:bg-slate-900 hover:text-white'
+            'mb-3 flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium',
+            page.url.startsWith('/profile')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
           ]"
         >
-          Mi Perfil
+          <UserCircleIcon class="w-5 h-5" />
+          <span>Mi Perfil</span>
         </Link>
-      </nav>
 
-      <!-- Cerrar sesión abajo -->
-      <button
-        @click="logout"
-        class="mt-8 flex items-center gap-2 px-3 text-sm font-semibold text-red-600 hover:text-red-700"
-      >
-        Cerrar Sesión
-      </button>
+        <!-- Cerrar sesión -->
+        <button
+          @click="logout"
+          class="flex items-center gap-3 px-3 text-sm font-semibold text-red-600 hover:text-red-700"
+        >
+          <ArrowRightStartOnRectangleIcon class="w-5 h-5" />
+          <span>Cerrar Sesión</span>
+        </button>
+      </div>
     </aside>
 
     <!-- CONTENIDO -->

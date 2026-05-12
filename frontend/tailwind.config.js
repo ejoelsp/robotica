@@ -6,6 +6,6 @@ export default {
     "./layouts/**/*.{vue,js}",
   ],
   theme: { extend: {} },
-  plugins: [],
+  plugins: [require("@tailwindcss/line-clamp")],
 };
 
