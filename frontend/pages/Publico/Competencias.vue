@@ -35,13 +35,13 @@ const openEventLink = (url) => {
   <section class="mx-auto max-w-7xl px-6 py-12">
     <div class="mb-8">
       <p class="text-sm font-semibold uppercase tracking-wide text-blue-600">
-        Club de Robotica ESPOCH
+        Club de Robótica ESPOCH
       </p>
       <h1 class="mt-2 text-3xl font-bold text-slate-900">
         Competencias
       </h1>
       <p class="mt-2 max-w-2xl text-sm text-slate-600">
-        Consulta la informacion general de las competencias registradas.
+        Consulta la información general de las competencias registradas.
       </p>
     </div>
 

@@ -62,7 +62,7 @@ class EvaluacionControllerTest extends TestCase
         $service
             ->shouldReceive('construirFormulario')
             ->once()
-            ->with($user, 3, 11)
+            ->with($user, 3, 11, 1)
             ->andReturn([
                 'ronda' => ['id' => 3, 'nombre' => 'Ronda 1'],
                 'equipo' => ['id' => 11, 'nombre' => 'Equipo A'],

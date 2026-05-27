@@ -1,6 +1,7 @@
 import { createApp, h } from "vue";
 import { createInertiaApp } from "@inertiajs/vue3";
 import "../frontend/styles/app.css";
+import "./lib/echo";
 
 // layout global
 import AppLayout from "./layouts/AppLayout.vue";

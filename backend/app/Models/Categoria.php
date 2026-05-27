@@ -23,7 +23,10 @@ class Categoria extends Model
         'nombre',
         'nombre_key',
         'costo_inscripcion',
+        'max_integrantes',
         'estado',
+        'estado_resultados',
+        'resultados_finalizados_at',
         'reglamento',
         'imagen',
     ];
@@ -31,6 +34,8 @@ class Categoria extends Model
     protected $casts = [
         'estado' => 'boolean',
         'costo_inscripcion' => 'decimal:2',
+        'max_integrantes' => 'integer',
+        'resultados_finalizados_at' => 'datetime',
     ];
 
     public function competencia()

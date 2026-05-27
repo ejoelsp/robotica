@@ -5,13 +5,17 @@ namespace App\Modules\Competidor\Inscripciones\Http\Controllers;
 use Inertia\Inertia;
 use App\Http\Controllers\Controller;
 use Illuminate\Support\Facades\Auth;
+use App\Models\ConfiguracionPago;
 use App\Models\Competencia;
 use App\Models\Categoria;
+use App\Models\Equipo;
 use App\Modules\Competidor\Inscripciones\Requests\StoreInscripcionRequest;
 use App\Modules\Competidor\Inscripciones\Services\InscripcionService;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Inscripcion;
 use App\Modules\Competidor\Inscripciones\Requests\StoreComprobanteRequest;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class InscripcionController extends Controller
 {
@@ -44,6 +48,7 @@ class InscripcionController extends Controller
                 'competencia_id',
                 'nombre',
                 'costo_inscripcion',
+                'max_integrantes',
                 'reglamento',
                 'imagen',
             ])
@@ -52,6 +57,7 @@ class InscripcionController extends Controller
                     'id' => $categoria->id,
                     'nombre' => $categoria->nombre,
                     'costo_inscripcion' => (float) ($categoria->costo_inscripcion ?? 0),
+                    'max_integrantes' => (int) ($categoria->max_integrantes ?? 2),
                     'descripcion_corta' => 'Sin subcategorías',
                     'descripcion' => 'Consulta el reglamento y completa tu inscripción para participar en esta categoría.',
                     'reglamento_url' => $categoria->reglamento
@@ -68,9 +74,9 @@ class InscripcionController extends Controller
 
         $inscripcionesActivas = Inscripcion::query()
             ->with([
-                'categoria:id,nombre,costo_inscripcion',
+                'categoria:id,nombre,costo_inscripcion,max_integrantes',
                 'competencia:id,nombre,fecha_inicio',
-                'equipo:id,nombre',
+                'equipo:id,nombre,institucion',
                 'integrantes:id,inscripcion_id,nombre_completo,user_id,es_capitan',
             ])
             ->where('user_id', auth()->id())
@@ -90,7 +96,10 @@ class InscripcionController extends Controller
 
                 return [
                     'id' => $inscripcion->id,
+                    'categoria_id' => $inscripcion->categoria_id,
+                    'competencia_id' => $inscripcion->competencia_id,
                     'categoria' => $inscripcion->categoria?->nombre ?? 'Categoría',
+                    'max_integrantes' => (int) ($inscripcion->categoria?->max_integrantes ?? 2),
 
                     'costo_inscripcion' => (float) ($inscripcion->categoria?->costo_inscripcion ?? 0),
                     'estado' => match ($estado) {
@@ -125,18 +134,29 @@ class InscripcionController extends Controller
                     'observacion_rechazo' => $inscripcion->observacion_rechazo,
 
                     'equipo' => $inscripcion->equipo?->nombre ?? 'Sin equipo',
+                    'institucion' => $inscripcion->equipo?->institucion ?? '',
                     'fechaInscripcion' => optional($inscripcion->created_at)?->format('d M Y'),
                     'competencia' => $inscripcion->competencia?->nombre ?? 'Sin competencia',
                     'fechaCompetencia' => optional($inscripcion->competencia?->fecha_inicio)?->format('d M Y'),
                     'integrantes' => $inscripcion->integrantes?->count() ?? 0,
                     'integrantes_nombres' => $integrantes,
                     'prototipo' => $inscripcion->nombre_prototipo,
+                    'telefono_contacto' => $inscripcion->telefono_contacto,
 
                     'mostrarPago' => in_array($estado, [
                         'pendiente',
                         'pendiente_pago',
                         'pendiente de pago',
                     ]) || $estadoComprobante === 'rechazado',
+
+                    'puedeEliminar' => $estado !== 'confirmado'
+                        && !in_array($estadoComprobante, ['aprobado', 'revision'], true),
+
+                    'puedeEditar' => in_array($estado, [
+                        'pendiente',
+                        'pendiente_pago',
+                        'pendiente de pago',
+                    ], true) && in_array($estadoComprobante, ['no_subido', 'rechazado'], true),
                 ];
             })
             ->values();
@@ -145,6 +165,7 @@ class InscripcionController extends Controller
             'competencias' => $competencias,
             'categoriasDisponibles' => $categorias,
             'inscripcionesActivas' => $inscripcionesActivas,
+            'configuracionPago' => $this->configuracionPagoActiva(),
         ]);
     }
 
@@ -158,6 +179,129 @@ class InscripcionController extends Controller
         return redirect()
             ->back()
             ->with('success', 'Inscripción registrada correctamente.');
+    }
+
+    public function update(StoreInscripcionRequest $request, int $id)
+    {
+        $inscripcion = Inscripcion::query()
+            ->with(['integrantes', 'equipo'])
+            ->where('user_id', auth()->id())
+            ->findOrFail($id);
+
+        $estado = strtolower((string) $inscripcion->estado);
+        $estadoComprobante = strtolower((string) ($inscripcion->estado_comprobante ?? 'no_subido'));
+
+        if (
+            !in_array($estado, ['pendiente', 'pendiente_pago', 'pendiente de pago'], true)
+            || !in_array($estadoComprobante, ['no_subido', 'rechazado'], true)
+        ) {
+            throw ValidationException::withMessages([
+                'inscripcion' => 'Solo puedes editar la inscripción antes de enviar el comprobante de pago.',
+            ]);
+        }
+
+        $data = $request->validated();
+
+        if (
+            (int) $data['competencia_id'] !== (int) $inscripcion->competencia_id
+            || (int) $data['categoria_id'] !== (int) $inscripcion->categoria_id
+        ) {
+            throw ValidationException::withMessages([
+                'categoria_id' => 'No puedes cambiar la categoría ni la competencia de una inscripción existente.',
+            ]);
+        }
+
+        DB::transaction(function () use ($inscripcion, $data, $estadoComprobante) {
+            $equipo = Equipo::query()->firstOrCreate(
+                [
+                    'nombre' => $data['nombre_equipo'],
+                    'institucion' => $data['institucion'],
+                ],
+                [
+                    'nombre' => $data['nombre_equipo'],
+                    'institucion' => $data['institucion'],
+                    'capitan_user_id' => null,
+                ]
+            );
+
+            $existeInscripcion = Inscripcion::query()
+                ->where('competencia_id', $inscripcion->competencia_id)
+                ->where('categoria_id', $inscripcion->categoria_id)
+                ->where('equipo_id', $equipo->id)
+                ->where('id', '!=', $inscripcion->id)
+                ->exists();
+
+            if ($existeInscripcion) {
+                throw ValidationException::withMessages([
+                    'nombre_equipo' => 'Ese equipo ya está inscrito en esta categoría para la competencia seleccionada.',
+                ]);
+            }
+
+            $updates = [
+                'equipo_id' => $equipo->id,
+                'nombre_prototipo' => $data['nombre_prototipo'],
+                'telefono_contacto' => $data['telefono_contacto'],
+            ];
+
+            if ($estadoComprobante === 'rechazado') {
+                $comprobante = $inscripcion->comprobante_pago;
+                $existeOtroUso = $comprobante
+                    ? Inscripcion::query()
+                        ->where('id', '!=', $inscripcion->id)
+                        ->where('comprobante_pago', $comprobante)
+                        ->exists()
+                    : false;
+
+                if ($comprobante && ! $existeOtroUso && Storage::disk('public')->exists($comprobante)) {
+                    Storage::disk('public')->delete($inscripcion->comprobante_pago);
+                }
+
+                $updates = array_merge($updates, [
+                    'estado' => 'pendiente_pago',
+                    'estado_comprobante' => 'no_subido',
+                    'comprobante_pago' => null,
+                    'fecha_subida_comprobante' => null,
+                    'motivo_rechazo' => null,
+                    'observacion_rechazo' => null,
+                    'fecha_revision_comprobante' => null,
+                    'revisado_por' => null,
+                ]);
+            }
+
+            $inscripcion->update($updates);
+            $inscripcion->integrantes()->delete();
+
+            $nombreCapitan = trim((string) $data['nombre_capitan']);
+            $integrantes = collect($data['integrantes'])
+                ->map(fn ($nombre) => trim((string) $nombre))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $nombreCapitanNormalizado = mb_strtolower($nombreCapitan);
+            $capitanRegistrado = false;
+
+            foreach ($integrantes as $nombreIntegrante) {
+                $esCapitan = mb_strtolower($nombreIntegrante) === $nombreCapitanNormalizado;
+                $capitanRegistrado = $capitanRegistrado || $esCapitan;
+
+                $inscripcion->integrantes()->create([
+                    'nombre_completo' => $nombreIntegrante,
+                    'user_id' => null,
+                    'es_capitan' => $esCapitan,
+                ]);
+            }
+
+            if (! $capitanRegistrado) {
+                $inscripcion->integrantes()->create([
+                    'nombre_completo' => $nombreCapitan,
+                    'user_id' => null,
+                    'es_capitan' => true,
+                ]);
+            }
+        });
+
+        return back()->with('success', 'Inscripción actualizada correctamente.');
     }
 
     public function storeComprobante(StoreComprobanteRequest $request)
@@ -199,5 +343,50 @@ class InscripcionController extends Controller
         return redirect()
             ->back()
             ->with('success', 'Comprobante subido correctamente.');
+    }
+
+    public function destroy(int $id)
+    {
+        $inscripcion = Inscripcion::query()
+            ->where('user_id', auth()->id())
+            ->findOrFail($id);
+
+        $estado = strtolower((string) $inscripcion->estado);
+        $estadoComprobante = strtolower((string) ($inscripcion->estado_comprobante ?? 'no_subido'));
+
+        if ($estado === 'confirmado' || in_array($estadoComprobante, ['aprobado', 'revision'], true)) {
+            return back()->with('error', 'No puedes eliminar una inscripción aprobada o en revisión.');
+        }
+
+        $comprobante = $inscripcion->comprobante_pago;
+
+        DB::transaction(function () use ($inscripcion) {
+            $inscripcion->delete();
+        });
+
+        if ($comprobante) {
+            $existeOtroUso = Inscripcion::query()
+                ->where('comprobante_pago', $comprobante)
+                ->exists();
+
+            if (! $existeOtroUso && Storage::disk('public')->exists($comprobante)) {
+                Storage::disk('public')->delete($comprobante);
+            }
+        }
+
+        return back()->with('success', 'Inscripción eliminada correctamente.');
+    }
+
+    protected function configuracionPagoActiva(): ?array
+    {
+        $configuracion = ConfiguracionPago::query()
+            ->where('activo', true)
+            ->latest('updated_at')
+            ->first();
+
+        return $configuracion ? [
+            'id' => $configuracion->id,
+            'informacion_pago' => $configuracion->informacion_pago,
+        ] : null;
     }
 }

@@ -100,7 +100,7 @@ watch(
     <!-- Grid paginado -->
     <div
       v-if="paginatedCategories.length"
-      class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 auto-rows-fr"
+      class="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-5 auto-rows-fr"
     >
       <TarjetaCategoria
         v-for="categoria in paginatedCategories"

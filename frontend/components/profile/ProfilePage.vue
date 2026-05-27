@@ -397,7 +397,7 @@ const submitPassword = () => {
         <!-- Contraseña actual -->
         <div class="space-y-1">
           <label class="text-xs font-semibold text-slate-600">
-            Contraseña Actual
+            Contraseña actual
           </label>
           <input
             v-model="passwordForm.current_password"
@@ -417,7 +417,7 @@ const submitPassword = () => {
         <!-- Nueva contraseña -->
         <div class="space-y-1">
           <label class="text-xs font-semibold text-slate-600">
-            Nueva Contraseña
+            Nueva contraseña
           </label>
           <input
             v-model="passwordForm.password"
@@ -437,7 +437,7 @@ const submitPassword = () => {
         <!-- Confirmación -->
         <div class="space-y-1">
           <label class="text-xs font-semibold text-slate-600">
-            Confirmar Nueva Contraseña
+            Confirmar nueva contraseña
           </label>
           <input
             v-model="passwordForm.password_confirmation"
@@ -457,7 +457,7 @@ const submitPassword = () => {
             class="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white
                    hover:bg-black disabled:opacity-60 disabled:cursor-not-allowed"
           >
-            {{ passwordForm.processing ? 'Actualizando...' : 'Actualizar Contraseña' }}
+            {{ passwordForm.processing ? 'Actualizando...' : 'Actualizar contraseña' }}
           </button>
 
           <button

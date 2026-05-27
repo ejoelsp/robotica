@@ -19,6 +19,7 @@ class Resultado extends Model
         'categoria_id',
         'inscripcion_id',
         'asignacion_juez_id',
+        'intento_numero',
         'puntaje',
         'tiempo',
         'penalizaciones',
@@ -40,6 +41,7 @@ class Resultado extends Model
         'valor_secundario' => 'decimal:3',
         'payload_json' => 'array',
         'version' => 'integer',
+        'intento_numero' => 'integer',
         'publicado_at' => 'datetime',
     ];
 

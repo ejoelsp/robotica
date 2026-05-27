@@ -40,8 +40,8 @@ return new class extends Migration
                 ],
                 [
                     'codigo' => 'soccer_goles',
-                    'nombre' => 'Soccer por goles',
-                    'descripcion' => 'Registro de marcador, faltas y amonestaciones para soccer robotico.',
+                    'nombre' => 'Marcador',
+                    'descripcion' => 'Registro de marcador entre Equipo A y Equipo B.',
                     'activo' => true,
                     'created_at' => now(),
                     'updated_at' => now(),

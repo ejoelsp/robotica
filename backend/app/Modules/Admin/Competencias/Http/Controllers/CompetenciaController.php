@@ -29,6 +29,7 @@ class CompetenciaController extends Controller
                 'enlace_evento',
                 'tipo_competencia',
                 'imagen_url',
+                'logo_url',
                 'estado',
                 'created_at',
                 'updated_at',
@@ -42,6 +43,7 @@ class CompetenciaController extends Controller
                 'enlace_evento' => $competencia->enlace_evento,
                 'tipo_competencia' => $competencia->tipo_competencia,
                 'imagen_url' => $competencia->imagen_url ? Storage::url($competencia->imagen_url) : null,
+                'logo_url' => $competencia->logo_url ? Storage::url($competencia->logo_url) : null,
                 'estado' => (bool) $competencia->estado,
                 'comite_organizadores' => $competencia->comiteOrganizadores
                     ->map(fn ($integrante) => [
@@ -74,7 +76,13 @@ class CompetenciaController extends Controller
             $data['imagen_url'] = $request->file('imagen')->store('competencias', 'public');
         }
 
+        if ($request->hasFile('logo')) {
+            $data['logo_url'] = $request->file('logo')->store('competencias/logos', 'public');
+        }
+
         unset($data['imagen']);
+        unset($data['logo']);
+        $data['temporada_id'] = $this->temporadaIdParaFecha((string) $data['fecha_inicio']);
 
         Competencia::create($data);
 
@@ -97,7 +105,17 @@ class CompetenciaController extends Controller
             $data['imagen_url'] = $request->file('imagen')->store('competencias', 'public');
         }
 
+        if ($request->hasFile('logo')) {
+            if ($competencia->logo_url && Storage::disk('public')->exists($competencia->logo_url)) {
+                Storage::disk('public')->delete($competencia->logo_url);
+            }
+
+            $data['logo_url'] = $request->file('logo')->store('competencias/logos', 'public');
+        }
+
         unset($data['imagen']);
+        unset($data['logo']);
+        $data['temporada_id'] = $this->temporadaIdParaFecha((string) $data['fecha_inicio']);
 
         $competencia->update($data);
 
@@ -121,6 +139,10 @@ class CompetenciaController extends Controller
 
         if ($competencia->imagen_url && Storage::disk('public')->exists($competencia->imagen_url)) {
             Storage::disk('public')->delete($competencia->imagen_url);
+        }
+
+        if ($competencia->logo_url && Storage::disk('public')->exists($competencia->logo_url)) {
+            Storage::disk('public')->delete($competencia->logo_url);
         }
 
         $competencia->delete();
@@ -163,5 +185,23 @@ class CompetenciaController extends Controller
                 ->with('error', $e->getMessage())
                 ->setStatusCode(303);
         }
+    }
+
+    private function temporadaIdParaFecha(string $fechaInicio): int
+    {
+        $anio = (int) date('Y', strtotime($fechaInicio));
+
+        $temporadaId = DB::table('catalogo.temporadas')
+            ->where('anio', $anio)
+            ->value('id');
+
+        if ($temporadaId) {
+            return (int) $temporadaId;
+        }
+
+        return (int) DB::table('catalogo.temporadas')->insertGetId([
+            'nombre' => 'Temporada ' . $anio,
+            'anio' => $anio,
+        ]);
     }
 }

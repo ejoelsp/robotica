@@ -15,12 +15,22 @@ class Ronda extends Model
         'categoria_id',
         'nombre',
         'tipo',
+        'orden',
+        'cantidad_intentos',
+        'intentos_consecutivos',
+        'clasifican_cantidad',
+        'criterio_clasificacion',
+        'ronda_origen_id',
+        'es_final',
         'estado',
-        'fecha_hora',
     ];
 
     protected $casts = [
-        'fecha_hora' => 'datetime',
+        'orden' => 'integer',
+        'cantidad_intentos' => 'integer',
+        'intentos_consecutivos' => 'boolean',
+        'clasifican_cantidad' => 'integer',
+        'es_final' => 'boolean',
     ];
 
     public function categoria()
@@ -31,5 +41,15 @@ class Ronda extends Model
     public function resultados()
     {
         return $this->hasMany(Resultado::class, 'ronda_id');
+    }
+
+    public function participantes()
+    {
+        return $this->hasMany(RondaParticipante::class, 'ronda_id');
+    }
+
+    public function origen()
+    {
+        return $this->belongsTo(Ronda::class, 'ronda_origen_id');
     }
 }

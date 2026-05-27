@@ -77,13 +77,25 @@
           <label class="mb-1 block text-sm font-medium text-slate-700" for="password">
             Contraseña
           </label>
-          <input
-            id="password"
-            v-model="form.password"
-            type="password"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
+          <div class="relative">
+            <input
+              id="password"
+              v-model="form.password"
+              :type="mostrarPassword ? 'text' : 'password'"
+              class="w-full rounded-md border border-slate-300 px-3 py-2 pr-11 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <button
+              type="button"
+              class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              :aria-label="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              :title="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              @click="mostrarPassword = !mostrarPassword"
+            >
+              <EyeSlashIcon v-if="mostrarPassword" class="h-5 w-5" />
+              <EyeIcon v-else class="h-5 w-5" />
+            </button>
+          </div>
           <ul class="mt-2 space-y-1 text-xs">
             <li :class="ruleClass(passwordLengthOk)">
               • Mínimo 8 caracteres
@@ -113,13 +125,25 @@
           >
             Confirmar contraseña
           </label>
-          <input
-            id="password_confirmation"
-            v-model="form.password_confirmation"
-            type="password"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            required
-          />
+          <div class="relative">
+            <input
+              id="password_confirmation"
+              v-model="form.password_confirmation"
+              :type="mostrarConfirmacionPassword ? 'text' : 'password'"
+              class="w-full rounded-md border border-slate-300 px-3 py-2 pr-11 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+            <button
+              type="button"
+              class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              :aria-label="mostrarConfirmacionPassword ? 'Ocultar confirmación de contraseña' : 'Mostrar confirmación de contraseña'"
+              :title="mostrarConfirmacionPassword ? 'Ocultar confirmación de contraseña' : 'Mostrar confirmación de contraseña'"
+              @click="mostrarConfirmacionPassword = !mostrarConfirmacionPassword"
+            >
+              <EyeSlashIcon v-if="mostrarConfirmacionPassword" class="h-5 w-5" />
+              <EyeIcon v-else class="h-5 w-5" />
+            </button>
+          </div>
           <p v-if="form.password_confirmation && !passwordsMatch" class="mt-1 text-xs text-red-500">
             Las contraseñas no coinciden.
           </p>
@@ -152,6 +176,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline';
 
 const form = useForm({
   name: '',
@@ -162,6 +187,8 @@ const form = useForm({
 });
 
 const page = usePage();
+const mostrarPassword = ref(false);
+const mostrarConfirmacionPassword = ref(false);
 const registerError = computed(() => page.props.registerError || '');
 const old = computed(() => page.props.old || {});
 

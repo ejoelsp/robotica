@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use App\Models\Competencia;
 use App\Models\Categoria;
 use App\Models\Equipo;
@@ -38,6 +39,13 @@ class Inscripcion extends Model
         'fecha_subida_comprobante' => 'datetime',
         'fecha_revision_comprobante' => 'datetime',
     ];
+
+    public function scopeAprobadas(Builder $query): Builder
+    {
+        return $query
+            ->where('estado', 'confirmado')
+            ->where('estado_comprobante', 'aprobado');
+    }
 
     public function competencia()
     {

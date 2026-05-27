@@ -24,7 +24,34 @@
         <nav class="hidden md:flex items-center gap-6 text-sm text-slate-600">
           <Link href="/" class="hover:text-slate-900">Inicio</Link>
           <Link href="/competencias" class="hover:text-slate-900">Competencias</Link>
-          <Link href="/resultados" class="hover:text-slate-900">Resultados</Link>
+          <div class="group relative">
+            <button
+              type="button"
+              class="hover:text-slate-900"
+            >
+              Resultados
+            </button>
+            <div class="invisible absolute left-0 top-full z-40 min-w-48 rounded-xl border border-slate-200 bg-white py-2 opacity-0 shadow-lg transition group-hover:visible group-hover:opacity-100">
+              <Link
+                href="/resultados"
+                class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              >
+                Resultados publicados
+              </Link>
+              <Link
+                href="/resultados-en-vivo"
+                class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              >
+                En vivo
+              </Link>
+              <Link
+                href="/sorteos"
+                class="block px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              >
+                Sorteos
+              </Link>
+            </div>
+          </div>
           <Link href="/contacto" class="hover:text-slate-900">Contacto</Link>
         </nav>
 
@@ -52,7 +79,6 @@
     <footer class="border-t bg-white mt-10">
       <div class="max-w-7xl mx-auto px-6 py-4 text-xs text-slate-500 flex flex-col md:flex-row justify-between gap-2">
         <span>© {{ year }} Club de Robótica ESPOCH</span>
-        <span>Proyecto de Titulación - Ingeniería en Software - ESPOCH</span>
       </div>
     </footer>
   </div>

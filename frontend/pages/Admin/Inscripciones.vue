@@ -14,6 +14,8 @@ import {
   PencilSquareIcon,
   ExclamationTriangleIcon,
   XMarkIcon,
+  BanknotesIcon,
+  SparklesIcon,
 } from "@heroicons/vue/24/outline";
 
 defineOptions({ layout: AdminLayout });
@@ -26,6 +28,33 @@ const page = usePage();
 const inscriptions = computed(() => page.props.inscriptions ?? []);
 const stats = computed(() => page.props.stats ?? []);
 const pendingPayments = computed(() => page.props.pendingPayments ?? []);
+const configuracionPago = computed(() => page.props.configuracionPago ?? null);
+
+const configuracionPagoForm = useForm({
+  informacion_pago: configuracionPago.value?.informacion_pago ?? "",
+});
+
+const informacionPagoGuardada = ref(configuracionPago.value?.informacion_pago ?? "");
+
+watch(
+  configuracionPago,
+  (configuracion) => {
+    const informacion = configuracion?.informacion_pago ?? "";
+    configuracionPagoForm.informacion_pago = informacion;
+    informacionPagoGuardada.value = informacion;
+  },
+  { immediate: true }
+);
+
+const hayCambiosConfiguracionPago = computed(() => {
+  return configuracionPagoForm.informacion_pago.trim() !== informacionPagoGuardada.value.trim();
+});
+
+const puedeGuardarConfiguracionPago = computed(() => {
+  return configuracionPagoForm.informacion_pago.trim().length > 0
+    && hayCambiosConfiguracionPago.value
+    && !configuracionPagoForm.processing;
+});
 
 // ============================
 //  STATE
@@ -95,6 +124,32 @@ function confirmRejectPayment() {
       router.reload({
         only: ["inscriptions", "stats", "pendingPayments"],
         preserveScroll: true,
+      });
+    },
+  });
+}
+
+function guardarConfiguracionPago() {
+  if (!puedeGuardarConfiguracionPago.value) return;
+
+  configuracionPagoForm.put("/admin/inscripciones/configuracion-pago", {
+    preserveScroll: true,
+    onSuccess: () => {
+      const informacionGuardada = configuracionPagoForm.informacion_pago.trim();
+      configuracionPagoForm.informacion_pago = informacionGuardada;
+      configuracionPagoForm.defaults("informacion_pago", informacionGuardada);
+      configuracionPagoForm.clearErrors();
+      informacionPagoGuardada.value = informacionGuardada;
+
+      router.reload({
+        only: ["configuracionPago"],
+        preserveScroll: true,
+        onSuccess: () => {
+          const informacion = configuracionPago.value?.informacion_pago ?? informacionGuardada;
+          configuracionPagoForm.informacion_pago = informacion;
+          configuracionPagoForm.defaults("informacion_pago", informacion);
+          informacionPagoGuardada.value = informacion;
+        },
       });
     },
   });
@@ -315,6 +370,99 @@ function exportExcel() {
         Administra las inscripciones de equipos y participantes
       </p>
     </div>
+
+    <!-- Configuracion de pago -->
+    <section
+      class="mb-6 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 shadow-sm"
+    >
+      <div class="p-5 lg:p-6">
+        <div class="mb-5 flex gap-4">
+          <div
+            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm"
+          >
+            <BanknotesIcon class="h-6 w-6" />
+          </div>
+
+          <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-2">
+              <h2 class="text-lg font-bold text-slate-900">Datos para depósito</h2>
+              <span
+                class="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-100"
+              >
+                <SparklesIcon class="h-3.5 w-3.5" />
+                Visible para competidores
+              </span>
+            </div>
+            <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+              Configura aquí la información bancaria que verán todos los participantes antes de subir su comprobante.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid gap-5 lg:grid-cols-2 lg:items-start">
+          <div class="space-y-3">
+            <div>
+              <label class="mb-2 block text-sm font-semibold text-slate-800">
+                Información de pago
+              </label>
+              <textarea
+                v-model="configuracionPagoForm.informacion_pago"
+                rows="9"
+                class="w-full resize-y rounded-2xl border border-blue-100 bg-white px-4 py-3 text-sm leading-6 text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-300 focus:ring-4 focus:ring-blue-100"
+                placeholder="Ej: Banco Pichincha&#10;Cuenta de ahorro transaccional&#10;Número: 2203247723&#10;Titular: Luis Heriberto Guano Arbito&#10;C.I.: 0504450305&#10;Correo: ejemplo@espoch.edu.ec&#10;Nota: En asunto colocar la categoría y el nombre del prototipo."
+              />
+              <p v-if="configuracionPagoForm.errors.informacion_pago" class="mt-2 text-sm text-rose-600">
+                {{ configuracionPagoForm.errors.informacion_pago }}
+              </p>
+            </div>
+
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p
+                class="text-sm font-medium"
+                :class="
+                  configuracionPagoForm.recentlySuccessful
+                    ? 'text-emerald-700'
+                    : hayCambiosConfiguracionPago
+                    ? 'text-amber-700'
+                    : 'text-slate-500'
+                "
+              >
+                {{
+                  configuracionPagoForm.recentlySuccessful
+                    ? "Configuración de pago guardada correctamente."
+                    : hayCambiosConfiguracionPago
+                    ? "Tienes cambios pendientes por guardar."
+                    : "La configuración global está guardada."
+                }}
+              </p>
+
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
+                :disabled="!puedeGuardarConfiguracionPago"
+                @click="guardarConfiguracionPago"
+              >
+                <BanknotesIcon class="h-4 w-4" />
+                {{ configuracionPagoForm.processing ? "Guardando..." : "Guardar datos de pago" }}
+              </button>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-white/80 bg-white/75 px-5 py-5 shadow-sm">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Vista previa</p>
+              <p
+                v-if="configuracionPagoForm.informacion_pago.trim()"
+              class="mt-3 whitespace-pre-line text-sm leading-7 text-slate-800"
+              >
+                {{ configuracionPagoForm.informacion_pago }}
+              </p>
+            <p v-else class="mt-3 text-sm text-slate-500">
+                Aún no hay datos configurados. Escribe la información en el cuadro de la derecha.
+              </p>
+          </div>
+        </div>
+      </div>
+    </section>
 
     <!-- Stats -->
     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">

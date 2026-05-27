@@ -1,9 +1,9 @@
 <script setup>
 import { Link, router, usePage } from '@inertiajs/vue3'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 // Heroicons para los ítems
 import {
-  Squares2X2Icon,
   TrophyIcon,
   ClipboardDocumentListIcon,
   PresentationChartBarIcon,
@@ -11,6 +11,8 @@ import {
   BuildingOfficeIcon,
   TagIcon,
   BellAlertIcon,
+  DocumentCheckIcon,
+  DocumentTextIcon,
   UserCircleIcon,
   ArrowRightStartOnRectangleIcon,
   ShieldCheckIcon,
@@ -18,11 +20,59 @@ import {
 
 const page = usePage()
 const user = page.props.auth?.user ?? { name: 'Administrador' }
+const contadorNoLeidas = ref(null)
+const notificacionesNoLeidas = computed(() =>
+  Number(
+    contadorNoLeidas.value
+      ?? page.props.stats?.noLeidas
+      ?? page.props.notificacionesNoLeidas
+      ?? page.props.adminNotificaciones?.noLeidas
+      ?? page.props["adminNotificaciones.noLeidas"]
+      ?? 0
+  )
+)
+
+const actualizarContadorNotificaciones = async () => {
+  try {
+    const response = await fetch('/admin/notificaciones/contador', {
+      headers: {
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+      credentials: 'same-origin',
+    })
+
+    if (!response.ok) return
+
+    const data = await response.json()
+    contadorNoLeidas.value = Number(data.no_leidas ?? 0)
+  } catch {
+    contadorNoLeidas.value = null
+  }
+}
+
+const sincronizarContadorNotificaciones = (event) => {
+  if (event?.detail?.noLeidas !== undefined) {
+    contadorNoLeidas.value = Number(event.detail.noLeidas ?? 0)
+    return
+  }
+
+  actualizarContadorNotificaciones()
+}
 
 // Logout
 const logout = () => {
   router.post('/logout')
 }
+
+onMounted(() => {
+  actualizarContadorNotificaciones()
+  window.addEventListener('admin-notificaciones:actualizar-contador', sincronizarContadorNotificaciones)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('admin-notificaciones:actualizar-contador', sincronizarContadorNotificaciones)
+})
 </script>
 
 <template>
@@ -69,20 +119,6 @@ const logout = () => {
       </div>
       <!-- Menú principal -->
       <nav class="space-y-1 text-sm font-medium">
-        <!-- Dashboard -->
-        <Link
-          href="/admin/dashboard"
-          :class="[
-            'flex items-center gap-3 px-3 py-2 rounded-xl',
-            page.url.startsWith('/admin/dashboard')
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
-          ]"
-        >
-          <Squares2X2Icon class="w-5 h-5" />
-          <span>Dashboard</span>
-        </Link>
-
         <!-- Competencias -->
         <Link
           href="/admin/competencias"
@@ -135,8 +171,8 @@ const logout = () => {
               : 'text-slate-600 hover:bg-slate-50'
           ]"
         >
-          <BuildingOfficeIcon class="w-5 h-5" />
-          <span>Asignación de jueces</span>
+          <BuildingOfficeIcon class="w-10 h-10" />
+          <span>Asignación de jueces y gestión de rondas</span>
         </Link>
 
 
@@ -150,8 +186,14 @@ const logout = () => {
               : 'text-slate-600 hover:bg-slate-50'
           ]"
         >
-          <BellAlertIcon class="w-5 h-5" />
-          <span>Notificaciones</span>
+          <BellAlertIcon class="w-5 h-5 shrink-0" />
+          <span class="min-w-0 flex-1">Notificaciones</span>
+          <span
+            v-if="notificacionesNoLeidas > 0"
+            class="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-red-600 px-2 py-0.5 text-xs font-bold leading-none text-white"
+          >
+            {{ notificacionesNoLeidas > 99 ? '99+' : notificacionesNoLeidas }}
+          </span>
         </Link>
 
         <!-- Resultados -->
@@ -166,6 +208,34 @@ const logout = () => {
         >
           <PresentationChartBarIcon class="w-5 h-5" />
           <span>Resultados</span>
+        </Link>
+
+        <!-- Reportes -->
+        <Link
+          href="/admin/reportes"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/admin/reportes')
+              ? 'bg-blue-50 text-blue-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          ]"
+        >
+          <DocumentTextIcon class="w-5 h-5" />
+          <span>Reportes</span>
+        </Link>
+
+        <!-- Certificados -->
+        <Link
+          href="/admin/certificados"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/admin/certificados')
+              ? 'bg-blue-50 text-blue-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          ]"
+        >
+          <DocumentCheckIcon class="w-5 h-5" />
+          <span>Certificados</span>
         </Link>
 
         <!-- Análisis Histórico -->

@@ -4,6 +4,8 @@ namespace App\Modules\Admin\AsignacionJueces\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\AsignacionJuezCategoria;
+use App\Models\Categoria;
+use App\Models\Ronda;
 use App\Modules\Admin\AsignacionJueces\Requests\StoreAsignacionJuezRequest;
 use App\Modules\Admin\AsignacionJueces\Requests\UpdateAsignacionJuezRequest;
 use App\Modules\Admin\AsignacionJueces\Requests\UpdateConfigJuecesCompetenciaRequest;
@@ -36,10 +38,20 @@ class AsignacionJuezController extends Controller
                 ->first()
             : null;
 
-        $categorias = DB::table('catalogo.categorias')
+        if ($competenciaId) {
+            Categoria::query()
+                ->with(['configCalificacion.mecanismo'])
+                ->where('competencia_id', $competenciaId)
+                ->where('estado', true)
+                ->get()
+                ->each(fn (Categoria $categoria) => $this->ensureRondaSistemaEnfrentamiento($categoria));
+        }
+
+        $categorias = Categoria::query()
+            ->with(['configCalificacion.mecanismo'])
+            ->withCount(['inscripciones', 'rondas'])
             ->where('competencia_id', $competenciaId)
             ->where('estado', true)
-            ->select('id', 'competencia_id', 'nombre', 'estado')
             ->orderBy('nombre')
             ->get()
             ->map(function ($item) {
@@ -48,6 +60,22 @@ class AsignacionJuezController extends Controller
                     'competencia_id' => $item->competencia_id,
                     'nombre' => $item->nombre,
                     'estado' => (bool) $item->estado,
+                    'inscripciones_count' => (int) $item->inscripciones_count,
+                    'rondas_count' => (int) $item->rondas_count,
+                    'config_calificacion' => $item->configCalificacion ? [
+                        'id' => $item->configCalificacion->id,
+                        'mecanismo_calificacion_id' => $item->configCalificacion->mecanismo_calificacion_id,
+                        'mecanismo_codigo' => $item->configCalificacion->mecanismo?->codigo,
+                        'mecanismo_nombre' => $item->configCalificacion->mecanismo?->nombre,
+                        'unidad_resultado' => $item->configCalificacion->unidad_resultado,
+                        'orden_ranking' => $item->configCalificacion->orden_ranking,
+                        'requiere_aprobacion_admin' => (bool) $item->configCalificacion->requiere_aprobacion_admin,
+                        'visible_publico_en_vivo' => (bool) $item->configCalificacion->visible_publico_en_vivo,
+                        'permite_edicion_juez' => (bool) $item->configCalificacion->permite_edicion_juez,
+                        'campos_json' => $item->configCalificacion->campos_json ?? [],
+                        'reglas_json' => $item->configCalificacion->reglas_json ?? [],
+                        'modalidad_competencia' => $this->modalidadCompetencia($item),
+                    ] : null,
                 ];
             })
             ->values();
@@ -135,6 +163,48 @@ class AsignacionJuezController extends Controller
             'categorias' => $categorias,
             'jueces' => $jueces,
             'asignaciones' => $asignaciones,
+        ]);
+    }
+
+    private function modalidadCompetencia(Categoria $categoria): string
+    {
+        $config = $categoria->configCalificacion;
+        $registro = is_array($config?->reglas_json ?? null)
+            ? (array) ($config->reglas_json['registro'] ?? [])
+            : [];
+        $campos = is_array($config?->campos_json ?? null) ? $config->campos_json : [];
+        $mecanismo = (string) ($config?->mecanismo?->codigo ?? '');
+
+        return (string) (
+            $registro['modalidad_competencia']
+            ?? $campos['modalidad_competencia']
+            ?? (in_array($mecanismo, ['combate', 'combate_llaves', 'soccer_goles'], true)
+                ? 'enfrentamiento_directo'
+                : 'participacion_individual')
+        );
+    }
+
+    private function ensureRondaSistemaEnfrentamiento(Categoria $categoria): void
+    {
+        if ($this->modalidadCompetencia($categoria) !== 'enfrentamiento_directo') {
+            return;
+        }
+
+        if ($categoria->rondas()->exists()) {
+            return;
+        }
+
+        Ronda::create([
+            'categoria_id' => $categoria->id,
+            'nombre' => 'Ronda 1',
+            'tipo' => 'libre',
+            'orden' => 1,
+            'cantidad_intentos' => 1,
+            'intentos_consecutivos' => false,
+            'clasifican_cantidad' => null,
+            'criterio_clasificacion' => 'ganador_enfrentamiento',
+            'es_final' => false,
+            'estado' => 'activa',
         ]);
     }
 

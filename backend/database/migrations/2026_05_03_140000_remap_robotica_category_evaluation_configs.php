@@ -178,7 +178,7 @@ return new class extends Migration
             'cronometro' => ['unidad_resultado' => 's', 'orden_ranking' => 'asc'],
             'puntaje_jueces' => ['unidad_resultado' => 'pts', 'orden_ranking' => 'desc'],
             'combate_llaves' => ['unidad_resultado' => 'pts', 'orden_ranking' => 'desc'],
-            'soccer_goles' => ['unidad_resultado' => 'dif. goles', 'orden_ranking' => 'desc'],
+            'soccer_goles' => ['unidad_resultado' => 'marcador', 'orden_ranking' => 'desc'],
             'dron_carrera' => ['unidad_resultado' => 's', 'orden_ranking' => 'asc'],
             'dron_destreza' => ['unidad_resultado' => 'pts', 'orden_ranking' => 'desc'],
         ], $codigo, ['unidad_resultado' => null, 'orden_ranking' => 'desc']);
@@ -230,11 +230,8 @@ return new class extends Migration
                 ['key' => 'observaciones', 'type' => 'textarea', 'label' => 'Observaciones', 'required' => false],
             ],
             'soccer_goles' => [
-                ['key' => 'goles_favor', 'type' => 'number', 'label' => 'Goles a favor', 'required' => true],
-                ['key' => 'goles_contra', 'type' => 'number', 'label' => 'Goles en contra', 'required' => true],
-                ['key' => 'faltas', 'type' => 'number', 'label' => 'Faltas', 'required' => false],
-                ['key' => 'amonestaciones', 'type' => 'number', 'label' => 'Amonestaciones', 'required' => false],
-                ['key' => 'observaciones', 'type' => 'textarea', 'label' => 'Observaciones', 'required' => false],
+                ['key' => 'marcador_equipo_a', 'type' => 'number', 'label' => 'Marcador equipo A', 'required' => true],
+                ['key' => 'marcador_equipo_b', 'type' => 'number', 'label' => 'Marcador equipo B', 'required' => true],
             ],
             'dron_carrera' => [
                 ['key' => 'tiempo', 'type' => 'duration', 'label' => 'Tiempo final', 'required' => true],

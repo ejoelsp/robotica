@@ -15,14 +15,15 @@ import {
   ChartBarSquareIcon,
   ClockIcon,
   UserGroupIcon,
-  NoSymbolIcon,
+  PencilSquareIcon,
+  XMarkIcon,
 } from "@heroicons/vue/24/outline";
 
 defineOptions({ layout: AdminLayout });
 
 const page = usePage();
 
-const activeTab = ref("control");
+const activeTab = ref("registros");
 
 const competenciaId = computed(() => page.props.competenciaId ?? null);
 const competencias = computed(() => page.props.competencias ?? []);
@@ -33,10 +34,28 @@ const selectedCategoryId = ref(null);
 const selectedRondaId = ref(null);
 
 const evaluacionesLoading = ref(false);
-const evaluacionChangingId = ref(null);
 const evaluacionesNotice = ref({ type: "", message: "" });
-const selectedEstadoEvaluacion = ref("");
+const selectedEstadoEvaluacion = ref("registrado");
 const selectedJuezId = ref("");
+const editEvaluacionModal = ref({
+  open: false,
+  row: null,
+  payload: {},
+  motivo_opcion: "",
+  motivo_otro: "",
+});
+const editEvaluacionSaving = ref(false);
+const editEvaluacionErrors = ref({});
+const evaluacionesSuccessModal = ref({ open: false, message: "" });
+let evaluacionesSuccessTimer = null;
+const correctionReasonOptions = [
+  "Error de digitación en el resultado",
+  "Corrección por reclamo aprobado",
+  "Penalización aplicada después del registro",
+  "Penalización retirada después de revisión",
+  "Corrección por decisión del comité organizador",
+  "Otro",
+];
 const evaluacionesData = ref({
   summary: {
     total: 0,
@@ -72,8 +91,11 @@ const liveData = ref({
 });
 const liveLoading = ref(false);
 const liveConnected = ref(false);
+const liveConnectionMode = ref("WebSocket");
 const liveNotice = ref("");
+const selectedLiveDetail = ref(null);
 let liveEventSource = null;
+let liveChannelName = null;
 
 const selectedCategory = computed(() => {
   return categorias.value.find((item) => Number(item.id) === Number(selectedCategoryId.value)) ?? null;
@@ -109,6 +131,8 @@ const currentSummary = computed(() => {
   );
 });
 
+const finalesUsaTiempo = computed(() => Boolean(finalesData.value.scope?.usa_tiempo));
+
 const publicationHistory = computed(() => {
   return finalesData.value.publication_history ?? [];
 });
@@ -118,11 +142,37 @@ const evaluacionesSummary = computed(() => {
     total: 0,
     registradas: 0,
     publicadas: 0,
-    anuladas: 0,
     equipos_count: 0,
     jueces_count: 0,
   };
 });
+
+const editFieldsGrouped = computed(() => {
+  const fields = editEvaluacionModal.value.row?.campos_edicion ?? [];
+
+  return {
+    principales: fields.filter((field) => !field.es_penalizacion),
+    penalizaciones: fields.filter((field) => field.es_penalizacion),
+  };
+});
+
+const editTemplate = computed(() => editEvaluacionModal.value.row?.plantilla_resultado || "");
+const editFields = computed(() => editEvaluacionModal.value.row?.campos_edicion ?? []);
+const editNumericFields = computed(() =>
+  editFields.value.filter((field) => field.type === "number")
+);
+const editObservationFields = computed(() =>
+  editFields.value.filter((field) => field.key === "observaciones" || field.type === "textarea")
+);
+const editNonNumericFields = computed(() =>
+  editFields.value.filter((field) => field.type !== "number" && field.key !== "observaciones" && field.type !== "textarea")
+);
+const editPositiveFields = computed(() =>
+  editNumericFields.value.filter((field) => !field.es_penalizacion)
+);
+const editPenaltyFields = computed(() =>
+  editNumericFields.value.filter((field) => field.es_penalizacion)
+);
 
 const liveCategories = computed(() => {
   const seen = new Map();
@@ -167,6 +217,71 @@ const liveScopesFiltered = computed(() => {
   });
 });
 
+function openLiveDetail(scope, row) {
+  selectedLiveDetail.value = {
+    scope,
+    row,
+    detail: row.detalle_publico ?? null,
+  };
+}
+
+function closeLiveDetail() {
+  selectedLiveDetail.value = null;
+}
+
+function formatDetailNumber(value) {
+  const number = Number(value ?? 0);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2);
+}
+
+function editNumberValue(key, fallback = 0) {
+  const value = editEvaluacionModal.value.payload?.[key];
+  if (value === null || value === "" || value === undefined || Number.isNaN(Number(value))) {
+    return fallback;
+  }
+
+  return Number(value);
+}
+
+function fieldUnit(field) {
+  const unit = Number(field?.valor_unitario ?? field?.max ?? 1);
+  return Number.isFinite(unit) ? unit : 1;
+}
+
+function fieldSignedUnit(field) {
+  const unit = fieldUnit(field);
+  return field?.es_penalizacion ? -Math.abs(unit) : unit;
+}
+
+function fieldUnitLabel(field) {
+  const unit = Math.abs(fieldUnit(field));
+  return field?.es_penalizacion ? `-${formatDetailNumber(unit)}` : `x${formatDetailNumber(unit)}`;
+}
+
+function fieldKindLabel(field) {
+  return field?.es_penalizacion ? "Resta" : "Suma";
+}
+
+function fieldTotal(field, suffix = "") {
+  return editNumberValue(`${field.key}${suffix}`) * fieldSignedUnit(field);
+}
+
+function individualCriteriaTotal() {
+  return editNumericFields.value.reduce((total, field) => total + fieldTotal(field), 0);
+}
+
+function matchupCriteriaTotal(side) {
+  return editNumericFields.value.reduce((total, field) => total + fieldTotal(field, `_${side}`), 0);
+}
+
+function maxScoreTotal() {
+  return editNumericFields.value.reduce((total, field) => total + editNumberValue(field.key), 0);
+}
+
+function visibleFieldInputType(field) {
+  return field.type === "number" ? "number" : "text";
+}
+
 function setNotice(type, message) {
   finalesNotice.value = { type, message };
 }
@@ -189,13 +304,38 @@ function badgeLive(estado) {
   return "bg-slate-100 text-slate-700 ring-1 ring-slate-200";
 }
 
+function templateDisplayName(row) {
+  return row?.plantilla_nombre || row?.mecanismo_nombre || "Sin plantilla";
+}
+
 function closeLiveStream() {
   if (liveEventSource) {
     liveEventSource.close();
     liveEventSource = null;
   }
 
+  if (liveChannelName && window.Echo) {
+    window.Echo.leave(liveChannelName);
+    liveChannelName = null;
+  }
+
   liveConnected.value = false;
+}
+
+function shouldHandleLiveEvent(payload) {
+  if (Number(payload?.competencia_id) !== Number(selectedCompetition.value)) {
+    return false;
+  }
+
+  if (Number(selectedLiveCategoryId.value) > 0 && Number(payload?.categoria_id) !== Number(selectedLiveCategoryId.value)) {
+    return false;
+  }
+
+  if (Number(selectedLiveRondaId.value) > 0 && Number(payload?.ronda_id) !== Number(selectedLiveRondaId.value)) {
+    return false;
+  }
+
+  return true;
 }
 
 function syncLiveFiltersFromPayload(payload) {
@@ -282,6 +422,26 @@ function connectLiveStream() {
     return;
   }
 
+  if (window.Echo) {
+    liveConnectionMode.value = "WebSocket";
+    liveChannelName = `resultados.competencia.${selectedCompetition.value}`;
+    window.Echo
+      .channel(liveChannelName)
+      .listen(".ResultadosActualizados", async (payload) => {
+        liveConnected.value = true;
+
+        if (!shouldHandleLiveEvent(payload)) {
+          return;
+        }
+
+        await loadLiveSnapshot();
+      });
+    liveConnected.value = true;
+    return;
+  }
+
+  liveConnectionMode.value = "SSE";
+
   const params = new URLSearchParams({
     competencia_id: String(selectedCompetition.value),
   });
@@ -304,7 +464,7 @@ function connectLiveStream() {
       liveNotice.value = "";
       syncLiveFiltersFromPayload(payload);
     } catch {
-      liveNotice.value = "Se recibio una actualizacion en vivo con formato invalido.";
+      liveNotice.value = "Se recibió una actualización en vivo con formato inválido.";
     }
   });
 
@@ -425,41 +585,130 @@ function changeCompetition() {
   );
 }
 
-async function cambiarEstadoEvaluacion(row, estado) {
-  const accion = estado === "anulado" ? "anular" : "restaurar";
-  const confirmed = window.confirm(`Seguro que deseas ${accion} la evaluacion de ${row.equipo_nombre}?`);
+function isBooleanEditField(field) {
+  return ["checkbox", "boolean"].includes(field?.type);
+}
 
-  if (!confirmed) return;
+function isSelectEditField(field) {
+  return field?.type === "select";
+}
 
-  evaluacionChangingId.value = row.id;
+function hasSideEditFields(row, field) {
+  const payload = row?.payload_actual ?? {};
+  return field?.type === "number" && (
+    Object.prototype.hasOwnProperty.call(payload, `${field.key}_a`) ||
+    Object.prototype.hasOwnProperty.call(payload, `${field.key}_b`)
+  );
+}
+
+function buildEditablePayload(row) {
+  const payload = { ...(row?.payload_actual ?? {}) };
+
+  for (const field of row?.campos_edicion ?? []) {
+    if (hasSideEditFields(row, field)) {
+      payload[`${field.key}_a`] ??= "";
+      payload[`${field.key}_b`] ??= "";
+      continue;
+    }
+
+    payload[field.key] ??= isBooleanEditField(field) ? false : "";
+  }
+
+  return payload;
+}
+
+function openEditEvaluacion(row) {
+  editEvaluacionErrors.value = {};
+  editEvaluacionModal.value = {
+    open: true,
+    row,
+    payload: buildEditablePayload(row),
+    motivo_opcion: "",
+    motivo_otro: "",
+  };
+}
+
+function closeEditEvaluacion(force = false) {
+  if (editEvaluacionSaving.value && !force) return;
+
+  editEvaluacionModal.value = {
+    open: false,
+    row: null,
+    payload: {},
+    motivo_opcion: "",
+    motivo_otro: "",
+  };
+  editEvaluacionErrors.value = {};
+}
+
+function showEvaluacionesSuccessModal(message) {
+  if (evaluacionesSuccessTimer) {
+    clearTimeout(evaluacionesSuccessTimer);
+  }
+
+  evaluacionesSuccessModal.value = { open: true, message };
+  evaluacionesSuccessTimer = setTimeout(() => {
+    evaluacionesSuccessModal.value = { open: false, message: "" };
+    evaluacionesSuccessTimer = null;
+  }, 2200);
+}
+
+function editFieldError(key) {
+  return editEvaluacionErrors.value[`payload.${key}`]?.[0]
+    ?? editEvaluacionErrors.value[key]?.[0]
+    ?? "";
+}
+
+async function saveEditEvaluacion() {
+  const row = editEvaluacionModal.value.row;
+  if (!row) return;
+
+  const motivoSeleccionado = String(editEvaluacionModal.value.motivo_opcion ?? "").trim();
+  const motivoOtro = String(editEvaluacionModal.value.motivo_otro ?? "").trim();
+  const motivoCambio = motivoSeleccionado === "Otro" ? motivoOtro : motivoSeleccionado;
+
+  if (!motivoSeleccionado) {
+    editEvaluacionErrors.value = {
+      motivo_opcion: ["Selecciona el motivo de corrección."],
+    };
+    return;
+  }
+
+  if (!motivoCambio) {
+    editEvaluacionErrors.value = {
+      motivo_otro: ["Ingresa el motivo de corrección."],
+    };
+    return;
+  }
+
+  editEvaluacionSaving.value = true;
+  editEvaluacionErrors.value = {};
   setEvaluacionesNotice("", "");
 
   try {
-    await axios.patch(`/admin/resultados/evaluaciones/${row.id}/estado`, {
-      estado,
-      motivo_cambio: estado === "anulado"
-        ? "Anulada desde revision de evaluaciones registradas"
-        : "Restaurada desde revision de evaluaciones registradas",
+    await axios.patch(`/admin/resultados/evaluaciones/${row.id}`, {
+      payload: editEvaluacionModal.value.payload,
+      observaciones: null,
+      motivo_cambio: motivoCambio,
     });
 
-    setEvaluacionesNotice(
-      "success",
-      estado === "anulado" ? "Evaluacion anulada correctamente." : "Evaluacion restaurada correctamente."
-    );
-
+    closeEditEvaluacion(true);
     await loadEvaluaciones();
 
     if (activeTab.value === "control") {
       await loadFinales();
     }
+
+    showEvaluacionesSuccessModal("Información actualizada correctamente.");
   } catch (error) {
-    const message = Object.values(error?.response?.data?.errors ?? {})[0]?.[0];
+    editEvaluacionErrors.value = error?.response?.data?.errors ?? {};
+    const message = Object.values(editEvaluacionErrors.value)[0]?.[0];
     setEvaluacionesNotice(
       "error",
-      message || error?.response?.data?.message || "No se pudo cambiar el estado de la evaluacion."
+      message || error?.response?.data?.message || "No se pudo corregir la evaluación."
     );
   } finally {
-    evaluacionChangingId.value = null;
+    editEvaluacionSaving.value = false;
   }
 }
 
@@ -484,7 +733,7 @@ async function consolidarResultados() {
   } catch (error) {
     if (error?.response?.status === 422) {
       const message = Object.values(error.response.data?.errors ?? {})[0]?.[0];
-      setNotice("warning", message || "No fue posible consolidar con la seleccion actual.");
+      setNotice("warning", message || "No fue posible consolidar con la selección actual.");
     } else {
       setNotice(
         "error",
@@ -574,7 +823,7 @@ function openScopePublicView(scope) {
 function syncMainSelectionToScope(scope) {
   selectedCategoryId.value = scope.categoria_id;
   selectedRondaId.value = scope.ronda_id;
-  activeTab.value = "control";
+  activeTab.value = "registros";
 }
 
 watch(
@@ -693,6 +942,9 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   closeLiveStream();
+  if (evaluacionesSuccessTimer) {
+    clearTimeout(evaluacionesSuccessTimer);
+  }
 });
 </script>
 
@@ -705,15 +957,6 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="inline-flex rounded-2xl border border-slate-200 bg-gray-200 p-1">
-        <button
-          class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
-          :class="activeTab === 'control' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
-          @click="activeTab = 'control'"
-        >
-          <ChartBarSquareIcon class="h-4 w-4" />
-          Panel de Control
-        </button>
-
         <button
           class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
           :class="activeTab === 'registros' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
@@ -735,7 +978,7 @@ onBeforeUnmount(() => {
 
       <div v-if="activeTab === 'registros'" class="space-y-6">
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div class="grid grid-cols-1 gap-4 lg:grid-cols-6">
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-5">
             <div>
               <label class="mb-1 block text-sm font-medium text-slate-700">Competencia</label>
               <select
@@ -751,12 +994,12 @@ onBeforeUnmount(() => {
             </div>
 
             <div>
-              <label class="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
+              <label class="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
               <select
                 v-model="selectedCategoryId"
                 class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option disabled :value="null">Seleccionar categoria</option>
+                <option disabled :value="null">Seleccionar categoría</option>
                 <option v-for="item in categorias" :key="item.id" :value="item.id">
                   {{ item.nombre }}
                 </option>
@@ -773,20 +1016,6 @@ onBeforeUnmount(() => {
                 <option v-for="item in rondasDisponibles" :key="item.id" :value="item.id">
                   {{ item.nombre }}
                 </option>
-              </select>
-            </div>
-
-            <div>
-              <label class="mb-1 block text-sm font-medium text-slate-700">Estado</label>
-              <select
-                v-model="selectedEstadoEvaluacion"
-                class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Todos</option>
-                <option value="registrado">Registrado</option>
-                <option value="publicado">Publicado</option>
-                <option value="anulado">Anulado</option>
-                <option value="borrador">Borrador</option>
               </select>
             </div>
 
@@ -829,7 +1058,7 @@ onBeforeUnmount(() => {
           {{ evaluacionesNotice.message }}
         </div>
 
-        <div class="grid grid-cols-1 gap-4 xl:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 xl:grid-cols-3">
           <div class="rounded-3xl border border-blue-200 bg-blue-50 p-5">
             <div class="flex items-start justify-between gap-4">
               <div>
@@ -850,18 +1079,6 @@ onBeforeUnmount(() => {
               </div>
               <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
                 <CheckCircleIcon class="h-7 w-7 text-emerald-700" />
-              </div>
-            </div>
-          </div>
-
-          <div class="rounded-3xl border border-red-200 bg-red-50 p-5">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <p class="text-sm font-semibold text-red-700">Anuladas</p>
-                <p class="mt-3 text-3xl font-bold text-red-900">{{ evaluacionesSummary.anuladas }}</p>
-              </div>
-              <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-red-100">
-                <NoSymbolIcon class="h-7 w-7 text-red-700" />
               </div>
             </div>
           </div>
@@ -902,6 +1119,7 @@ onBeforeUnmount(() => {
                 <tr class="border-b border-slate-200 text-left text-black">
                   <th class="px-6 py-4 font-medium">Estado</th>
                   <th class="px-6 py-4 font-medium">Equipo</th>
+                  <th class="px-6 py-4 font-medium">Prototipo</th>
                   <th class="px-6 py-4 font-medium">Juez</th>
                   <th class="px-6 py-4 font-medium">Plantilla</th>
                   <th class="px-6 py-4 font-medium">Resultado</th>
@@ -925,7 +1143,11 @@ onBeforeUnmount(() => {
 
                   <td class="px-6 py-4 align-top">
                     <p class="font-medium text-slate-900">{{ row.equipo_nombre || "Equipo sin nombre" }}</p>
-                    <p class="mt-1 text-xs text-slate-500">{{ row.nombre_prototipo || row.institucion || "Sin prototipo" }}</p>
+                    <p class="mt-1 text-xs text-slate-500">{{ row.institucion || "Sin institución" }}</p>
+                  </td>
+
+                  <td class="px-6 py-4 align-top">
+                    <p class="font-medium text-slate-900">{{ row.nombre_prototipo || "Sin prototipo" }}</p>
                   </td>
 
                   <td class="px-6 py-4 align-top">
@@ -935,9 +1157,9 @@ onBeforeUnmount(() => {
 
                   <td class="px-6 py-4 align-top">
                     <span class="inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                      {{ row.mecanismo_nombre }}
+                      {{ templateDisplayName(row) }}
                     </span>
-                    <p class="mt-2 text-xs text-slate-400">{{ row.mecanismo_codigo || "sin_codigo" }}</p>
+                    <p class="mt-2 text-xs text-slate-400">{{ row.plantilla_resultado || row.mecanismo_codigo || "sin_codigo" }}</p>
                   </td>
 
                   <td class="px-6 py-4 align-top">
@@ -967,25 +1189,12 @@ onBeforeUnmount(() => {
                   <td class="px-6 py-4 align-top">
                     <div class="flex justify-end gap-2">
                       <button
-                        v-if="row.estado !== 'anulado'"
                         type="button"
-                        @click="cambiarEstadoEvaluacion(row, 'anulado')"
-                        :disabled="evaluacionChangingId === row.id"
-                        class="inline-flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-100 disabled:opacity-50"
+                        @click="openEditEvaluacion(row)"
+                        class="inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition hover:bg-blue-100"
                       >
-                        <NoSymbolIcon class="h-4 w-4" />
-                        Anular
-                      </button>
-
-                      <button
-                        v-else
-                        type="button"
-                        @click="cambiarEstadoEvaluacion(row, 'registrado')"
-                        :disabled="evaluacionChangingId === row.id"
-                        class="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:opacity-50"
-                      >
-                        <CheckCircleIcon class="h-4 w-4" />
-                        Restaurar
+                        <PencilSquareIcon class="h-4 w-4" />
+                        Editar
                       </button>
                     </div>
                   </td>
@@ -993,7 +1202,7 @@ onBeforeUnmount(() => {
 
                 <tr v-if="!evaluacionesData.rows.length">
                   <td colspan="8" class="px-6 py-10 text-center text-slate-500">
-                    No hay registros de jueces para esta seleccion.
+                    No hay registros de jueces para esta selección.
                   </td>
                 </tr>
               </tbody>
@@ -1258,8 +1467,8 @@ onBeforeUnmount(() => {
                   <th class="px-6 py-4 font-medium">Equipo</th>
                   <th class="px-6 py-4 font-medium">Institución</th>
                   <th class="px-6 py-4 font-medium">Resultado</th>
-                  <th class="px-6 py-4 font-medium">Puntaje</th>
-                  <th class="px-6 py-4 font-medium">Tiempo</th>
+                  <th v-if="!finalesUsaTiempo" class="px-6 py-4 font-medium">Puntaje</th>
+                  <th v-if="!finalesUsaTiempo" class="px-6 py-4 font-medium">Tiempo</th>
                   <th class="px-6 py-4 font-medium">Version origen</th>
                   <th class="px-6 py-4 font-medium">Estado</th>
                 </tr>
@@ -1285,13 +1494,13 @@ onBeforeUnmount(() => {
                     <span class="text-slate-900">{{ row.resultado_label }}</span>
                   </td>
 
-                  <td class="px-6 py-4">
+                  <td v-if="!finalesUsaTiempo" class="px-6 py-4">
                     <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-blue-200">
                       {{ row.puntaje_total ?? "-" }}
                     </span>
                   </td>
 
-                  <td class="px-6 py-4 text-slate-700">
+                  <td v-if="!finalesUsaTiempo" class="px-6 py-4 text-slate-700">
                     {{ row.tiempo_total ?? "-" }}
                   </td>
 
@@ -1307,7 +1516,7 @@ onBeforeUnmount(() => {
                 </tr>
 
                 <tr v-if="!finalesData.rows.length">
-                  <td colspan="8" class="px-6 py-10 text-center text-slate-500">
+                  <td :colspan="finalesUsaTiempo ? 6 : 8" class="px-6 py-10 text-center text-slate-500">
                     No hay clasificaciones consolidadas para esta selección. Puedes consolidar cuando existan evaluaciones registradas.
                   </td>
                 </tr>
@@ -1334,7 +1543,7 @@ onBeforeUnmount(() => {
                   class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
                   :class="liveConnected ? 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200' : 'bg-slate-100 text-slate-700 ring-1 ring-slate-200'"
                 >
-                  {{ liveConnected ? "Conexión activa" : "Reconectando" }}
+                  {{ liveConnected ? `${liveConnectionMode} activo` : `Reconectando ${liveConnectionMode}` }}
                 </span>
 
                 <button
@@ -1459,7 +1668,7 @@ onBeforeUnmount(() => {
                     class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-900 transition hover:bg-slate-50"
                   >
                     <PlayIcon class="h-4 w-4" />
-                    Ir al panel
+                    Ver registros
                   </button>
 
                   <button
@@ -1476,23 +1685,54 @@ onBeforeUnmount(() => {
               <div class="overflow-x-auto">
                 <table class="min-w-full text-sm">
                   <thead>
-                    <tr class="border-b border-slate-200 text-left text-slate-600">
+                    <tr v-if="scope.usa_enfrentamiento" class="border-b border-slate-200 text-left text-slate-600">
+                      <th class="py-3 pr-4 font-medium">Encuentro</th>
+                      <th class="py-3 pr-4 font-medium">Equipo A</th>
+                      <th class="py-3 pr-4 font-medium">Resultado</th>
+                      <th class="py-3 pr-0 font-medium">Equipo B</th>
+                    </tr>
+                    <tr v-else class="border-b border-slate-200 text-left text-slate-600">
                       <th class="py-3 pr-4 font-medium">Pos.</th>
                       <th class="py-3 pr-4 font-medium">Equipo</th>
                       <th class="py-3 pr-4 font-medium">Institución</th>
                       <th class="py-3 pr-4 font-medium">Resultado</th>
-                      <th class="py-3 pr-0 font-medium">Puntaje</th>
+                      <th v-if="!scope.usa_tiempo" class="py-3 pr-0 font-medium">Puntaje</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-200">
-                    <tr v-for="row in scope.rows" :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`">
+                    <template v-if="scope.usa_enfrentamiento">
+                      <tr
+                        v-for="row in scope.rows"
+                        :key="`${scope.key}-match-${row.encuentro}`"
+                        class="cursor-pointer transition hover:bg-slate-50"
+                        @click="openLiveDetail(scope, row)"
+                      >
+                        <td class="py-3 pr-4 font-semibold text-slate-900">{{ row.encuentro }}</td>
+                        <td class="py-3 pr-4">
+                          <p class="font-medium text-slate-900">{{ row.equipo_a }}</p>
+                          <p class="mt-1 text-xs text-slate-500">{{ row.institucion_a || "Sin institución" }}</p>
+                        </td>
+                        <td class="py-3 pr-4 font-semibold text-slate-900">{{ row.resultado_label }}</td>
+                        <td class="py-3 pr-0">
+                          <p class="font-medium text-slate-900">{{ row.equipo_b }}</p>
+                          <p class="mt-1 text-xs text-slate-500">{{ row.institucion_b || "Sin institución" }}</p>
+                        </td>
+                      </tr>
+                    </template>
+                    <tr
+                      v-else
+                      v-for="row in scope.rows"
+                      :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`"
+                      class="cursor-pointer transition hover:bg-slate-50"
+                      @click="openLiveDetail(scope, row)"
+                    >
                       <td class="py-3 pr-4 font-semibold text-slate-900">{{ row.posicion }}°</td>
                       <td class="py-3 pr-4">
                         <p class="font-medium text-slate-900">{{ row.equipo_nombre }}</p>
                       </td>
                       <td class="py-3 pr-4 text-slate-600">{{ row.institucion || "Sin institución" }}</td>
                       <td class="py-3 pr-4 text-slate-900">{{ row.resultado_label }}</td>
-                      <td class="py-3 pr-0 text-slate-700">{{ row.puntaje_total ?? "-" }}</td>
+                      <td v-if="!scope.usa_tiempo" class="py-3 pr-0 text-slate-700">{{ row.puntaje_total ?? "-" }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1502,6 +1742,608 @@ onBeforeUnmount(() => {
 
           <div v-if="!liveScopesFiltered.length" class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500 shadow-sm">
             No hay clasificaciones en vivo para la competencia o filtros seleccionados.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="evaluacionesSuccessModal.open" class="fixed inset-0 z-[10080] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-slate-950/30"></div>
+      <div class="relative w-full max-w-sm rounded-2xl border border-emerald-200 bg-white p-6 text-center shadow-2xl">
+        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
+          <CheckCircleIcon class="h-8 w-8 text-emerald-600" />
+        </div>
+        <h3 class="mt-4 text-lg font-bold text-slate-900">Información actualizada</h3>
+        <p class="mt-2 text-sm text-slate-600">{{ evaluacionesSuccessModal.message }}</p>
+      </div>
+    </div>
+
+    <div v-if="editEvaluacionModal.open" class="fixed inset-0 z-[10060] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-slate-950/50" @click="closeEditEvaluacion"></div>
+
+      <div class="relative max-h-[90vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <h3 class="text-lg font-semibold text-slate-900">Editar evaluación</h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Revisa los valores registrados y corrige solo lo necesario.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 hover:bg-slate-50"
+            @click="closeEditEvaluacion"
+          >
+            <XMarkIcon class="h-5 w-5 text-slate-600" />
+          </button>
+        </div>
+
+        <div class="max-h-[65vh] overflow-y-auto px-5 py-5">
+          <div class="mb-5 grid gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm md:grid-cols-5">
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Equipo</p>
+              <p class="mt-1 font-semibold text-slate-900">{{ editEvaluacionModal.row?.equipo_nombre || "Equipo sin nombre" }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Prototipo</p>
+              <p class="mt-1 font-semibold text-slate-900">{{ editEvaluacionModal.row?.nombre_prototipo || "Sin prototipo" }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Juez</p>
+              <p class="mt-1 font-semibold text-slate-900">{{ editEvaluacionModal.row?.juez_nombre || "Juez sin nombre" }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Plantilla</p>
+              <p class="mt-1 font-semibold text-slate-900">{{ templateDisplayName(editEvaluacionModal.row) }}</p>
+            </div>
+            <div>
+              <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">Resultado actual</p>
+              <p class="mt-1 font-semibold text-slate-900">{{ editEvaluacionModal.row?.resultado_label || "Sin resultado" }}</p>
+            </div>
+          </div>
+
+          <section
+            v-if="editTemplate === 'tabla_enfrentamiento_criterios'"
+            class="overflow-hidden rounded-2xl border border-slate-200"
+          >
+            <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h4 class="font-semibold text-slate-900">Criterios del enfrentamiento</h4>
+              <p class="text-sm text-slate-500">Edita las cantidades registradas por el juez y revisa el impacto en cada participante.</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="bg-white text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3 font-semibold">Criterio</th>
+                    <th class="px-4 py-3 font-semibold">Tipo</th>
+                    <th class="px-4 py-3 font-semibold">Valor</th>
+                    <th class="px-4 py-3 font-semibold">Equipo A</th>
+                    <th class="px-4 py-3 font-semibold">Total A</th>
+                    <th class="px-4 py-3 font-semibold">Equipo B</th>
+                    <th class="px-4 py-3 font-semibold">Total B</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="field in editNumericFields" :key="field.key">
+                    <td class="px-4 py-3 font-semibold text-slate-900">{{ field.label }}</td>
+                    <td class="px-4 py-3">
+                      <span
+                        class="rounded-full px-2 py-1 text-xs font-semibold ring-1"
+                        :class="field.es_penalizacion ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
+                      >
+                        {{ fieldKindLabel(field) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 font-semibold text-slate-700">{{ fieldUnitLabel(field) }}</td>
+                    <td class="px-4 py-3">
+                      <input
+                        v-model="editEvaluacionModal.payload[`${field.key}_a`]"
+                        type="number"
+                        step="0.001"
+                        class="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p v-if="editFieldError(`${field.key}_a`)" class="mt-1 text-xs text-red-600">{{ editFieldError(`${field.key}_a`) }}</p>
+                    </td>
+                    <td class="px-4 py-3 font-bold" :class="field.es_penalizacion ? 'text-red-700' : 'text-slate-900'">
+                      {{ formatDetailNumber(fieldTotal(field, "_a")) }}
+                    </td>
+                    <td class="px-4 py-3">
+                      <input
+                        v-model="editEvaluacionModal.payload[`${field.key}_b`]"
+                        type="number"
+                        step="0.001"
+                        class="w-24 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p v-if="editFieldError(`${field.key}_b`)" class="mt-1 text-xs text-red-600">{{ editFieldError(`${field.key}_b`) }}</p>
+                    </td>
+                    <td class="px-4 py-3 font-bold" :class="field.es_penalizacion ? 'text-red-700' : 'text-slate-900'">
+                      {{ formatDetailNumber(fieldTotal(field, "_b")) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="grid gap-3 border-t border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+              <div class="rounded-xl bg-white p-3">
+                <p class="text-xs font-semibold uppercase text-slate-500">Total Equipo A</p>
+                <p class="mt-1 text-xl font-bold text-slate-900">{{ formatDetailNumber(matchupCriteriaTotal("a")) }} pts</p>
+              </div>
+              <div class="rounded-xl bg-white p-3">
+                <p class="text-xs font-semibold uppercase text-slate-500">Total Equipo B</p>
+                <p class="mt-1 text-xl font-bold text-slate-900">{{ formatDetailNumber(matchupCriteriaTotal("b")) }} pts</p>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-else-if="editTemplate === 'tabla_individual_criterios'"
+            class="overflow-hidden rounded-2xl border border-slate-200"
+          >
+            <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h4 class="font-semibold text-slate-900">Criterios individuales</h4>
+              <p class="text-sm text-slate-500">Cada cantidad se multiplica por su valor configurado en la plantilla.</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="bg-white text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3 font-semibold">Criterio</th>
+                    <th class="px-4 py-3 font-semibold">Tipo</th>
+                    <th class="px-4 py-3 font-semibold">Valor</th>
+                    <th class="px-4 py-3 font-semibold">Registrado</th>
+                    <th class="px-4 py-3 font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="field in editNumericFields" :key="field.key">
+                    <td class="px-4 py-3 font-semibold text-slate-900">{{ field.label }}</td>
+                    <td class="px-4 py-3">
+                      <span
+                        class="rounded-full px-2 py-1 text-xs font-semibold ring-1"
+                        :class="field.es_penalizacion ? 'bg-red-50 text-red-700 ring-red-200' : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
+                      >
+                        {{ fieldKindLabel(field) }}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 font-semibold text-slate-700">{{ fieldUnitLabel(field) }}</td>
+                    <td class="px-4 py-3">
+                      <input
+                        v-model="editEvaluacionModal.payload[field.key]"
+                        type="number"
+                        step="0.001"
+                        class="w-28 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+                    </td>
+                    <td class="px-4 py-3 font-bold" :class="field.es_penalizacion ? 'text-red-700' : 'text-slate-900'">
+                      {{ formatDetailNumber(fieldTotal(field)) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="border-t border-slate-200 bg-slate-50 p-4">
+              <p class="text-xs font-semibold uppercase text-slate-500">Resultado estimado</p>
+              <p class="mt-1 text-xl font-bold text-slate-900">{{ formatDetailNumber(individualCriteriaTotal()) }} pts</p>
+            </div>
+          </section>
+
+          <section
+            v-else-if="editTemplate === 'tabla_individual_puntaje_maximo'"
+            class="overflow-hidden rounded-2xl border border-slate-200"
+          >
+            <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
+              <h4 class="font-semibold text-slate-900">Puntaje máximo por criterio</h4>
+              <p class="text-sm text-slate-500">Edita el puntaje otorgado dentro del máximo configurado para cada criterio.</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="bg-white text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3 font-semibold">Criterio</th>
+                    <th class="px-4 py-3 font-semibold">Máximo</th>
+                    <th class="px-4 py-3 font-semibold">Puntaje registrado</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="field in editNumericFields" :key="field.key">
+                    <td class="px-4 py-3 font-semibold text-slate-900">{{ field.label }}</td>
+                    <td class="px-4 py-3 font-semibold text-slate-700">{{ formatDetailNumber(fieldUnit(field)) }} pts</td>
+                    <td class="px-4 py-3">
+                      <input
+                        v-model="editEvaluacionModal.payload[field.key]"
+                        type="number"
+                        step="0.001"
+                        :max="fieldUnit(field)"
+                        class="w-32 rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="border-t border-slate-200 bg-slate-50 p-4">
+              <p class="text-xs font-semibold uppercase text-slate-500">Resultado estimado</p>
+              <p class="mt-1 text-xl font-bold text-slate-900">{{ formatDetailNumber(maxScoreTotal()) }} pts</p>
+            </div>
+          </section>
+
+          <section
+            v-else-if="editTemplate === 'tiempo'"
+            class="rounded-2xl border border-slate-200 p-4"
+          >
+            <h4 class="font-semibold text-slate-900">Registro de tiempo</h4>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <div v-for="field in editFields" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
+                <label class="mb-1 block text-sm font-semibold text-slate-800">{{ field.label }}</label>
+                <textarea
+                  v-if="field.type === 'textarea'"
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  rows="3"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  v-else
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  :type="visibleFieldInputType(field)"
+                  :step="field.type === 'number' ? '0.001' : undefined"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  :placeholder="field.type === 'duration' ? 'Ej: 00:07:35' : ''"
+                />
+                <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-else-if="editTemplate === 'marcador'"
+            class="rounded-2xl border border-slate-200 p-4"
+          >
+            <h4 class="font-semibold text-slate-900">Marcador del encuentro</h4>
+            <div class="mt-4 grid gap-4 sm:grid-cols-2">
+              <div v-for="field in editFields" :key="field.key">
+                <label class="mb-1 block text-sm font-semibold text-slate-800">{{ field.label }}</label>
+                <input
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  :type="visibleFieldInputType(field)"
+                  :step="field.type === 'number' ? '1' : undefined"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section v-else class="rounded-2xl border border-slate-200 p-4">
+            <h4 class="font-semibold text-slate-900">Campos configurados</h4>
+            <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div v-for="field in editFields" :key="field.key" :class="field.type === 'textarea' ? 'sm:col-span-2' : ''">
+                <label class="mb-1 block text-sm font-semibold text-slate-800">{{ field.label }}</label>
+                <select
+                  v-if="isSelectEditField(field)"
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecciona {{ field.label.toLowerCase() }}</option>
+                  <option
+                    v-for="option in field.options || []"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label || option.value }}
+                  </option>
+                </select>
+                <label
+                  v-else-if="isBooleanEditField(field)"
+                  class="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"
+                >
+                  <input
+                    v-model="editEvaluacionModal.payload[field.key]"
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Activo</span>
+                </label>
+                <textarea
+                  v-else-if="field.type === 'textarea'"
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  rows="3"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <input
+                  v-else
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  :type="visibleFieldInputType(field)"
+                  :step="field.type === 'number' ? '0.001' : undefined"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section
+            v-if="editNonNumericFields.length && ['tabla_enfrentamiento_criterios', 'tabla_individual_criterios', 'tabla_individual_puntaje_maximo'].includes(editTemplate)"
+            class="mt-5 rounded-2xl border border-slate-200 p-4"
+          >
+            <h4 class="font-semibold text-slate-900">Campos adicionales</h4>
+            <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div v-for="field in editNonNumericFields" :key="field.key">
+                <label class="mb-1 block text-sm font-semibold text-slate-800">{{ field.label }}</label>
+                <select
+                  v-if="isSelectEditField(field)"
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Selecciona {{ field.label.toLowerCase() }}</option>
+                  <option
+                    v-for="option in field.options || []"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label || option.value }}
+                  </option>
+                </select>
+                <label
+                  v-else-if="isBooleanEditField(field)"
+                  class="flex min-h-[44px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-800"
+                >
+                  <input
+                    v-model="editEvaluacionModal.payload[field.key]"
+                    type="checkbox"
+                    class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Activo</span>
+                </label>
+                <input
+                  v-else
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  :type="visibleFieldInputType(field)"
+                  :step="field.type === 'number' ? '0.001' : undefined"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  :placeholder="field.type === 'duration' ? 'Ej: 00:07:35' : ''"
+                />
+                <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <section v-if="editObservationFields.length && editTemplate !== 'tiempo'" class="mt-5 rounded-2xl border border-slate-200 p-4">
+            <h4 class="font-semibold text-slate-900">Observaciones de la plantilla</h4>
+            <div class="mt-3 space-y-3">
+              <div v-for="field in editObservationFields" :key="field.key">
+                <label class="mb-1 block text-sm font-semibold text-slate-800">{{ field.label }}</label>
+                <textarea
+                  v-model="editEvaluacionModal.payload[field.key]"
+                  rows="3"
+                  class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  :placeholder="`Ingresa ${field.label.toLowerCase()}`"
+                />
+                <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
+              </div>
+            </div>
+          </section>
+
+          <div class="mt-5 space-y-4">
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-800">
+                Motivo de corrección <span class="text-red-500">*</span>
+              </label>
+              <select
+                v-model="editEvaluacionModal.motivo_opcion"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">Selecciona un motivo</option>
+                <option
+                  v-for="option in correctionReasonOptions"
+                  :key="option"
+                  :value="option"
+                >
+                  {{ option }}
+                </option>
+              </select>
+              <p v-if="editFieldError('motivo_opcion')" class="mt-1 text-xs text-red-600">
+                {{ editFieldError("motivo_opcion") }}
+              </p>
+            </div>
+
+            <div v-if="editEvaluacionModal.motivo_opcion === 'Otro'">
+              <label class="mb-1 block text-sm font-semibold text-slate-800">
+                Especificar motivo <span class="text-red-500">*</span>
+              </label>
+              <input
+                v-model="editEvaluacionModal.motivo_otro"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Escribe el motivo de corrección"
+              />
+              <p v-if="editFieldError('motivo_otro')" class="mt-1 text-xs text-red-600">
+                {{ editFieldError("motivo_otro") }}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-3 border-t border-slate-200 px-5 py-4">
+          <button
+            type="button"
+            class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            @click="closeEditEvaluacion"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="editEvaluacionSaving"
+            @click="saveEditEvaluacion"
+          >
+            <CheckCircleIcon class="h-5 w-5" />
+            {{ editEvaluacionSaving ? "Guardando..." : "Guardar cambios" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="selectedLiveDetail" class="fixed inset-0 z-[10060] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-slate-950/50" @click="closeLiveDetail"></div>
+
+      <div class="relative max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">
+              {{ selectedLiveDetail.scope.categoria_nombre }} · {{ selectedLiveDetail.scope.ronda_nombre }}
+            </p>
+            <h3 class="mt-1 text-xl font-bold text-slate-900">
+              {{ selectedLiveDetail.detail?.titulo || "Detalle del resultado" }}
+            </h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Resultado: <span class="font-semibold text-slate-900">{{ selectedLiveDetail.row.resultado_label }}</span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            @click="closeLiveDetail"
+            aria-label="Cerrar detalle"
+          >
+            <XMarkIcon class="h-5 w-5" />
+          </button>
+        </div>
+
+        <div class="max-h-[72vh] overflow-y-auto p-5">
+          <div
+            v-if="selectedLiveDetail.detail?.matriz_jueces"
+            class="mb-5 overflow-x-auto rounded-xl border border-slate-200"
+          >
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th class="px-4 py-3">Juez</th>
+                  <th
+                    v-for="attempt in selectedLiveDetail.detail.matriz_jueces.intentos"
+                    :key="`admin-matrix-head-${attempt.numero}`"
+                    class="px-4 py-3"
+                  >
+                    {{ attempt.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200">
+                <tr
+                  v-for="judge in selectedLiveDetail.detail.matriz_jueces.jueces"
+                  :key="`admin-matrix-judge-${judge.juez_user_id}`"
+                >
+                  <td class="px-4 py-3 font-medium text-slate-900">{{ judge.juez_nombre }}</td>
+                  <td
+                    v-for="attempt in judge.intentos"
+                    :key="`admin-matrix-judge-${judge.juez_user_id}-${attempt.numero}`"
+                    class="px-4 py-3 text-slate-700"
+                  >
+                    {{ attempt.label || "-" }}
+                  </td>
+                </tr>
+                <tr class="bg-blue-50 font-bold text-blue-800">
+                  <td class="px-4 py-3">Promedio</td>
+                  <td
+                    v-for="attempt in selectedLiveDetail.detail.matriz_jueces.promedios"
+                    :key="`admin-matrix-average-${attempt.numero}`"
+                    class="px-4 py-3"
+                  >
+                    {{ attempt.label || "-" }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <template v-if="selectedLiveDetail.detail?.tipo === 'tabla_enfrentamiento_criterios'">
+            <div class="mb-4 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-4 text-center">
+              <div>
+                <p class="text-xs text-slate-500">{{ selectedLiveDetail.detail.equipo_a }}</p>
+                <p class="text-2xl font-black text-slate-900">{{ formatDetailNumber(selectedLiveDetail.detail.total_a) }}</p>
+              </div>
+              <div class="flex items-center justify-center text-lg font-bold text-slate-400">VS</div>
+              <div>
+                <p class="text-xs text-slate-500">{{ selectedLiveDetail.detail.equipo_b }}</p>
+                <p class="text-2xl font-black text-slate-900">{{ formatDetailNumber(selectedLiveDetail.detail.total_b) }}</p>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3">Criterio</th>
+                    <th class="px-4 py-3">Valor</th>
+                    <th class="px-4 py-3">Cant. A</th>
+                    <th class="px-4 py-3">Puntaje A</th>
+                    <th class="px-4 py-3">Cant. B</th>
+                    <th class="px-4 py-3">Puntaje B</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="item in selectedLiveDetail.detail.criterios" :key="item.criterio">
+                    <td class="px-4 py-3 font-medium" :class="item.es_penalizacion ? 'text-red-600' : 'text-slate-900'">{{ item.criterio }}</td>
+                    <td class="px-4 py-3">x {{ formatDetailNumber(item.valor_unitario) }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(item.cantidad_a) }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(item.puntaje_a) }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(item.cantidad_b) }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(item.puntaje_b) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <template v-else-if="['tabla_individual_criterios', 'tabla_individual_puntaje_maximo'].includes(selectedLiveDetail.detail?.tipo)">
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3">Criterio</th>
+                    <th class="px-4 py-3">{{ selectedLiveDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? 'Máximo' : 'Cantidad' }}</th>
+                    <th class="px-4 py-3">{{ selectedLiveDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? 'Otorgado' : 'Valor' }}</th>
+                    <th class="px-4 py-3">Puntaje</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="item in selectedLiveDetail.detail.criterios" :key="item.criterio">
+                    <td class="px-4 py-3 font-medium" :class="item.es_penalizacion ? 'text-red-600' : 'text-slate-900'">{{ item.criterio }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(selectedLiveDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? item.puntaje_maximo : item.cantidad) }}</td>
+                    <td class="px-4 py-3">{{ selectedLiveDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? formatDetailNumber(item.puntaje) : `x ${formatDetailNumber(item.valor_unitario)}` }}</td>
+                    <td class="px-4 py-3">{{ formatDetailNumber(item.puntaje) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-4 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-xl bg-slate-50 p-4"><p class="text-xs text-slate-500">Subtotal</p><p class="text-lg font-bold">{{ formatDetailNumber(selectedLiveDetail.detail.subtotal) }}</p></div>
+              <div class="rounded-xl bg-red-50 p-4"><p class="text-xs text-red-500">Penalizaciones</p><p class="text-lg font-bold text-red-700">{{ formatDetailNumber(selectedLiveDetail.detail.penalizaciones) }}</p></div>
+              <div class="rounded-xl bg-blue-50 p-4"><p class="text-xs text-blue-500">Resultado final</p><p class="text-lg font-bold text-blue-700">{{ formatDetailNumber(selectedLiveDetail.detail.total) }}</p></div>
+            </div>
+          </template>
+
+          <template v-else-if="selectedLiveDetail.detail?.tipo === 'marcador'">
+            <div class="rounded-2xl bg-slate-950 p-6 text-center text-white">
+              <p class="text-sm text-slate-300">Marcador final</p>
+              <p class="mt-2 text-5xl font-black">{{ selectedLiveDetail.detail.marcador_a }} - {{ selectedLiveDetail.detail.marcador_b }}</p>
+            </div>
+          </template>
+
+          <template v-else-if="selectedLiveDetail.detail?.tipo === 'tiempo'">
+            <div class="flex justify-center">
+              <div class="w-full max-w-md rounded-2xl bg-slate-50 p-6 text-center">
+                <p class="text-sm font-medium text-slate-500">Tiempo</p>
+                <p class="mt-2 text-4xl font-black text-slate-900">{{ selectedLiveDetail.detail.tiempo_label }}</p>
+              </div>
+            </div>
+          </template>
+
+          <div v-else class="rounded-xl bg-slate-50 p-5 text-sm text-slate-600">
+            No hay detalle adicional para este resultado.
           </div>
         </div>
       </div>

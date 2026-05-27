@@ -18,6 +18,10 @@ import {
   ArrowUpTrayIcon,
   DocumentIcon,
   XCircleIcon,
+  BanknotesIcon,
+  ClipboardDocumentIcon,
+  TrashIcon,
+  PencilSquareIcon,
 } from "@heroicons/vue/24/outline";
 
 defineOptions({ layout: CompetidorLayout });
@@ -35,6 +39,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  configuracionPago: {
+    type: Object,
+    default: null,
+  },
 });
 
 // =====================================================
@@ -42,6 +50,19 @@ const props = defineProps({
 // =====================================================
 const categoriasDisponibles = computed(() => props.categoriasDisponibles ?? []);
 const competencias = computed(() => props.competencias ?? []);
+const informacionPago = computed(() => props.configuracionPago?.informacion_pago?.trim() ?? "");
+const datosPagoCopiados = ref(false);
+
+async function copiarDatosPago() {
+  if (!informacionPago.value || typeof navigator === "undefined" || !navigator.clipboard) return;
+
+  await navigator.clipboard.writeText(informacionPago.value);
+  datosPagoCopiados.value = true;
+
+  setTimeout(() => {
+    datosPagoCopiados.value = false;
+  }, 1800);
+}
 
 // =====================================================
 // FLUJO INSCRIPCIÓN A CATEGORÍA
@@ -50,6 +71,9 @@ const selectedCategoria = ref(null);
 const isDetalleCategoriaOpen = ref(false);
 const isFormularioInscripcionOpen = ref(false);
 const isInscripcionExitosaOpen = ref(false);
+const formularioModo = ref("create");
+const editTarget = ref(null);
+const editInitialData = ref(null);
 
 const inscripcionForm = useForm({
   competencia_id: null,
@@ -78,6 +102,9 @@ const cerrarDetalleCategoria = () => {
 };
 
 const abrirFormularioInscripcion = (categoria) => {
+  formularioModo.value = "create";
+  editTarget.value = null;
+  editInitialData.value = null;
   selectedCategoria.value = categoria;
   isDetalleCategoriaOpen.value = false;
   isFormularioInscripcionOpen.value = true;
@@ -85,6 +112,9 @@ const abrirFormularioInscripcion = (categoria) => {
 
 const cerrarFormularioInscripcion = () => {
   isFormularioInscripcionOpen.value = false;
+  formularioModo.value = "create";
+  editTarget.value = null;
+  editInitialData.value = null;
   inscripcionForm.clearErrors();
 };
 
@@ -112,15 +142,34 @@ const enviarFormularioInscripcion = (payload) => {
   inscripcionForm.nombre_capitan = payload.capitan;
   inscripcionForm.nombre_prototipo = payload.prototipo;
   inscripcionForm.telefono_contacto = payload.contacto;
-  inscripcionForm.integrantes = String(payload.integrantes)
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
+  inscripcionForm.integrantes = Array.isArray(payload.integrantes)
+    ? payload.integrantes.map((item) => String(item).trim()).filter(Boolean)
+    : String(payload.integrantes)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
 
-  inscripcionForm.post("/competidor/inscripciones", {
+  const isEdit = formularioModo.value === "edit" && editTarget.value?.id;
+  const url = isEdit
+    ? `/competidor/inscripciones/${editTarget.value.id}/editar`
+    : "/competidor/inscripciones";
+
+  const options = {
     preserveScroll: true,
     onSuccess: () => {
       isFormularioInscripcionOpen.value = false;
+      formularioModo.value = "create";
+      editTarget.value = null;
+      editInitialData.value = null;
+
+      if (isEdit) {
+        router.reload({
+          only: ["inscripcionesActivas", "categoriasDisponibles"],
+          preserveScroll: true,
+        });
+        return;
+      }
+
       isInscripcionExitosaOpen.value = true;
     },
     onError: (errors) => {
@@ -130,10 +179,12 @@ const enviarFormularioInscripcion = (payload) => {
       if (firstError) {
         alert(firstError);
       } else {
-        alert("No se pudo registrar la inscripción.");
+        alert(isEdit ? "No se pudo actualizar la inscripción." : "No se pudo registrar la inscripción.");
       }
     },
-  });
+  };
+
+  inscripcionForm.post(url, options);
 };
 
 const cerrarInscripcionExitosa = () => {
@@ -163,6 +214,8 @@ const hayPendientesPago = computed(() =>
       item.estado === "pendiente_pago" || item.estado_comprobante === "rechazado"
   )
 );
+
+const mostrarPanelPago = computed(() => hayPendientesPago.value || Boolean(informacionPago.value));
 
 const selectedItems = computed(() =>
   inscripcionesActivas.value.filter((item) => selectedInscripcionIds.value.includes(item.id))
@@ -321,6 +374,9 @@ const fileInputRef = ref(null);
 const comprobanteFile = ref(null);
 const comprobanteError = ref("");
 const isSendingComprobante = ref(false);
+const isDeleteModalOpen = ref(false);
+const deleteTarget = ref(null);
+const isDeletingInscripcion = ref(false);
 
 const selectedComprobanteCount = computed(() => selectedComprobanteItems.value.length);
 const selectedComprobanteTotal = computed(() =>
@@ -501,6 +557,69 @@ const cerrarComprobanteEnviado = () => {
 const subirComprobante = (item) => {
   abrirModalComprobante(item);
 };
+
+const abrirModalEditarInscripcion = (item) => {
+  if (!item?.id || !item.puedeEditar) return;
+
+  const capitan = item.integrantes_nombres?.find((integrante) => integrante.es_capitan)?.nombre ?? "";
+  const integrantes = (item.integrantes_nombres ?? [])
+    .filter((integrante) => !integrante.es_capitan)
+    .map((integrante) => integrante.nombre);
+
+  formularioModo.value = "edit";
+  editTarget.value = item;
+  editInitialData.value = {
+    institucion: item.institucion ?? "",
+    equipo: item.equipo ?? "",
+    capitan,
+    prototipo: item.prototipo ?? "",
+    contacto: item.telefono_contacto ?? "+593",
+    integrantes,
+  };
+  selectedCategoria.value = {
+    id: item.categoria_id,
+    nombre: item.categoria,
+    competencia_id: item.competencia_id,
+    competencia_nombre: item.competencia,
+    max_integrantes: item.max_integrantes ?? Math.max((item.integrantes_nombres?.length ?? 2), 1),
+  };
+  isFormularioInscripcionOpen.value = true;
+};
+
+const abrirModalEliminarInscripcion = (item) => {
+  if (!item?.id || !item.puedeEliminar) return;
+  deleteTarget.value = item;
+  isDeleteModalOpen.value = true;
+};
+
+const cerrarModalEliminarInscripcion = () => {
+  if (isDeletingInscripcion.value) return;
+  isDeleteModalOpen.value = false;
+  deleteTarget.value = null;
+};
+
+const confirmarEliminarInscripcion = () => {
+  if (!deleteTarget.value?.id || !deleteTarget.value.puedeEliminar) return;
+
+  const targetId = deleteTarget.value.id;
+  isDeletingInscripcion.value = true;
+
+  router.post(`/competidor/inscripciones/${targetId}/eliminar`, {}, {
+    preserveScroll: true,
+    onSuccess: () => {
+      selectedInscripcionIds.value = selectedInscripcionIds.value.filter((id) => id !== targetId);
+      isDeleteModalOpen.value = false;
+      deleteTarget.value = null;
+      router.reload({
+        only: ["inscripcionesActivas", "categoriasDisponibles"],
+        preserveScroll: true,
+      });
+    },
+    onFinish: () => {
+      isDeletingInscripcion.value = false;
+    },
+  });
+};
 </script>
 
 <template>
@@ -531,7 +650,7 @@ const subirComprobante = (item) => {
 
         <div class="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           <div
-            class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
           >
             <button
               type="button"
@@ -553,13 +672,14 @@ const subirComprobante = (item) => {
             <div>PROTOTIPO</div>
             <div>ESTADO</div>
             <div class="text-right">PRECIO</div>
+            <div class="text-right">ACCIÓN</div>
           </div>
 
           <div class="divide-y divide-slate-200">
             <article
               v-for="item in inscripcionesActivas"
               :key="`table-${item.id}`"
-              class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr] items-center gap-4 px-5 py-5 transition"
+              class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 px-5 py-5 transition"
               :class="getCardClasses(item.estado, item.estado_comprobante)"
             >
               <button
@@ -628,19 +748,81 @@ const subirComprobante = (item) => {
                   {{ formatPrice(item.costo_inscripcion) }}
                 </p>
               </div>
+
+              <div class="flex justify-end gap-2">
+                <button
+                  type="button"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-blue-200 bg-white text-blue-600 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+                  :disabled="!item.puedeEditar"
+                  title="Editar inscripción"
+                  @click="abrirModalEditarInscripcion(item)"
+                >
+                  <PencilSquareIcon class="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-300"
+                  :disabled="!item.puedeEliminar"
+                  title="Eliminar inscripción"
+                  @click="abrirModalEliminarInscripcion(item)"
+                >
+                  <TrashIcon class="h-4 w-4" />
+                </button>
+              </div>
             </article>
           </div>
         </div>
 
         <div
-          class="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm sm:flex-row sm:items-center sm:justify-between"
+          class="mt-6 grid gap-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center"
         >
-          <p class="text-sm text-slate-600">
+          <div
+            v-if="mostrarPanelPago"
+            class="overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50"
+          >
+            <div class="flex flex-col gap-4 p-4 sm:flex-row sm:items-start">
+              <div
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm"
+              >
+                <BanknotesIcon class="h-6 w-6" />
+              </div>
+
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                      Datos para realizar el depósito
+                    </p>
+                  </div>
+                </div>
+
+                <p
+                  v-if="informacionPago"
+                  class="mt-4 whitespace-pre-line rounded-xl bg-white/75 px-4 py-3 text-sm font-medium leading-6 text-slate-700 ring-1 ring-blue-100"
+                >
+                  {{ informacionPago }}
+                </p>
+                <p
+                  v-else
+                  class="mt-4 rounded-xl bg-amber-50 px-4 py-3 text-sm font-medium leading-6 text-amber-700 ring-1 ring-amber-200"
+                >
+                  Los datos de pago aún no han sido configurados por el administrador.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <p v-if="!mostrarPanelPago" class="text-sm text-slate-600">
             {{ selectedCount }} inscripci{{ selectedCount === 1 ? "ón seleccionada" : "ones seleccionadas" }}
           </p>
 
-          <div class="flex flex-col items-start gap-3 sm:items-end">
-            <div class="text-left sm:text-right">
+          <div class="flex flex-col items-start gap-3 lg:items-end">
+            <p v-if="mostrarPanelPago" class="text-sm text-slate-600">
+              {{ selectedCount }} inscripción seleccionada{{ selectedCount === 1 ? "" : "s" }}
+            </p>
+
+            <div class="text-left lg:text-right">
               <p class="text-sm text-slate-500">Total a pagar</p>
               <p class="text-4xl font-bold tracking-tight text-slate-900">
                 {{ formatPrice(totalSelectedPrice) }}
@@ -887,16 +1069,76 @@ const subirComprobante = (item) => {
       <ModalFormularioInscripcion
         :open="isFormularioInscripcionOpen"
         :categoria="selectedCategoria"
+        :initial-data="editInitialData"
+        :mode="formularioModo"
         @close="cerrarFormularioInscripcion"
         @submitted="enviarFormularioInscripcion"
       />
 
       <ModalInscripcionExitosa
         :open="isInscripcionExitosaOpen"
-        title="¡Inscripción Exitosa!"
-        message="Tu inscripción ha sido registrada correctamente. Recibirás un correo de confirmación pronto."
+        title="¡Inscripción registrada!"
+        message="Sube el comprobante de pago para completar la validación."
         @close="cerrarInscripcionExitosa"
       />
+
+      <Teleport to="body">
+        <div
+          v-if="isDeleteModalOpen"
+          class="fixed inset-0 z-[10080] flex items-center justify-center bg-slate-950/60 px-4 py-6"
+          @click="cerrarModalEliminarInscripcion"
+        >
+          <div
+            class="w-full max-w-[460px] overflow-hidden rounded-2xl bg-white shadow-2xl"
+            @click.stop
+          >
+            <div class="px-6 pt-6">
+              <div class="flex items-start gap-4">
+                <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-600">
+                  <TrashIcon class="h-6 w-6" />
+                </div>
+
+                <div class="min-w-0">
+                  <h3 class="text-xl font-bold text-slate-900">
+                    Eliminar inscripción
+                  </h3>
+                  <p class="mt-2 text-sm leading-6 text-slate-600">
+                    Esta acción eliminará la inscripción del equipo
+                    <span class="font-semibold text-slate-900">{{ deleteTarget?.equipo }}</span>
+                    en la categoría
+                    <span class="font-semibold text-slate-900">{{ deleteTarget?.categoria }}</span>.
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                Si los datos están mal registrados, deberás inscribir el equipo nuevamente.
+              </div>
+            </div>
+
+            <div class="mt-6 grid grid-cols-1 gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:grid-cols-2">
+              <button
+                type="button"
+                class="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isDeletingInscripcion"
+                @click="cerrarModalEliminarInscripcion"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-300"
+                :disabled="isDeletingInscripcion"
+                @click="confirmarEliminarInscripcion"
+              >
+                <TrashIcon class="h-4 w-4" />
+                {{ isDeletingInscripcion ? "Eliminando..." : "Sí, eliminar" }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Teleport>
     </div>
 
     <!-- MODAL SUBIR COMPROBANTE -->

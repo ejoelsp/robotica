@@ -27,7 +27,8 @@ class EvaluacionController extends Controller
         $contexto = $this->service->getContextoJuez(
             $request->user(),
             $request->integer('categoria_id') ?: null,
-            $request->integer('ronda_id') ?: null
+            $request->integer('ronda_id') ?: null,
+            $request->session()->getId()
         );
 
         return response()->json($contexto);
@@ -38,15 +39,48 @@ class EvaluacionController extends Controller
         $validated = $request->validate([
             'ronda_id' => ['required', 'integer', 'min:1'],
             'equipo_id' => ['required', 'integer', 'min:1'],
+            'intento_numero' => ['nullable', 'integer', 'min:1', 'max:10'],
         ]);
 
         return response()->json(
             $this->service->construirFormulario(
                 $request->user(),
                 (int) $validated['ronda_id'],
-                (int) $validated['equipo_id']
+                (int) $validated['equipo_id'],
+                (int) ($validated['intento_numero'] ?? 1),
+                $request->session()->getId()
             )
         );
+    }
+
+    public function heartbeat(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'categoria_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        return response()->json([
+            'bloqueo_registro' => $this->service->renovarBloqueoRegistro(
+                $request->user(),
+                (int) $validated['categoria_id'],
+                $request->session()->getId()
+            ),
+        ]);
+    }
+
+    public function liberarBloqueo(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'categoria_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $this->service->liberarBloqueoRegistro(
+            $request->user(),
+            (int) $validated['categoria_id'],
+            $request->session()->getId()
+        );
+
+        return response()->json(['liberado' => true]);
     }
 
     public function sorteo(Request $request): JsonResponse
@@ -60,7 +94,8 @@ class EvaluacionController extends Controller
             $this->service->generarSorteo(
                 $request->user(),
                 (int) $validated['ronda_id'],
-                (bool) ($validated['regenerar'] ?? false)
+                (bool) ($validated['regenerar'] ?? false),
+                $request->session()->getId()
             )
         );
     }
@@ -68,7 +103,11 @@ class EvaluacionController extends Controller
     public function guardar(GuardarEvaluacionRequest $request): JsonResponse
     {
         try {
-            $payload = $this->service->guardarEvaluacion($request->user(), $request->validated());
+            $payload = $this->service->guardarEvaluacion(
+                $request->user(),
+                $request->validated(),
+                $request->session()->getId()
+            );
 
             return response()->json($payload);
         } catch (EvaluacionConcurrencyException $exception) {
@@ -87,5 +126,24 @@ class EvaluacionController extends Controller
         } catch (ValidationException $exception) {
             throw $exception;
         }
+    }
+
+    public function terminarEncuentro(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ronda_id' => ['required', 'integer', 'min:1'],
+            'equipo_id' => ['required', 'integer', 'min:1'],
+            'payload' => ['nullable', 'array'],
+        ]);
+
+        return response()->json(
+            $this->service->terminarEncuentro(
+                $request->user(),
+                (int) $validated['ronda_id'],
+                (int) $validated['equipo_id'],
+                $validated['payload'] ?? [],
+                $request->session()->getId()
+            )
+        );
     }
 }

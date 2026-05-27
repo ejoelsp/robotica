@@ -1,1155 +1,779 @@
 <script setup>
+import axios from "axios";
 import AdminLayout from "@/layouts/AdminLayout.vue";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-
+import { computed, ref } from "vue";
+import { router, usePage } from "@inertiajs/vue3";
 import {
   ArrowDownTrayIcon,
-  ChevronDownIcon,
-  ChartBarIcon,
-  PresentationChartLineIcon,
-  BuildingLibraryIcon,
-  TagIcon,
+  ArrowPathIcon,
   ArrowTrendingUpIcon,
-  ArrowTrendingDownIcon,
-  InformationCircleIcon,
+  BuildingLibraryIcon,
+  ChartBarIcon,
+  CheckCircleIcon,
+  ClipboardDocumentCheckIcon,
+  ExclamationTriangleIcon,
+  PresentationChartLineIcon,
+  SparklesIcon,
+  TrophyIcon,
+  UserGroupIcon,
 } from "@heroicons/vue/24/outline";
 
-// ============================
-//  UI STATE
-// ============================
-const selectedYear = ref("2025");
-const activeTab = ref("participacion"); // participacion | institucion | categorias | proyecciones
-const exportOpen = ref(false);
+defineOptions({ layout: AdminLayout });
 
-// Cerrar dropdown al click afuera
-const onDocClick = (e) => {
-  const target = e.target;
-  const el = document.getElementById("export-menu");
-  const btn = document.getElementById("export-btn");
-  if (!exportOpen.value) return;
-  if (el?.contains(target) || btn?.contains(target)) return;
-  exportOpen.value = false;
-};
+const page = usePage();
 
-onMounted(() => document.addEventListener("click", onDocClick));
-onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
+const temporadas = computed(() => page.props.temporadas ?? []);
+const competencias = computed(() => page.props.competencias ?? []);
+const cierreTemporada = computed(() => page.props.cierreTemporada ?? null);
+const cierreCompetencia = computed(() => page.props.cierreCompetencia ?? null);
+const preliminarTemporada = computed(() => page.props.preliminarTemporada ?? null);
+const preliminarCompetencia = computed(() => page.props.preliminarCompetencia ?? null);
+const temporadaId = computed(() => page.props.temporadaId ?? null);
+const competenciaId = computed(() => page.props.competenciaId ?? null);
 
-// ============================
-//  MOCK DATA (luego lo conectas al backend)
-// ============================
-const participationHistory = computed(() => [
-  { label: "Ene 2025", participantes: 45, equipos: 12 },
-  { label: "Feb 2025", participantes: 52, equipos: 15 },
-  { label: "Mar 2025", participantes: 68, equipos: 18 },
-  { label: "Abr 2025", participantes: 78, equipos: 21 },
-  { label: "May 2025", participantes: 95, equipos: 25 },
-  { label: "Jun 2025", participantes: 112, equipos: 28 },
-  { label: "Jul 2025", participantes: 125, equipos: 32 },
-  { label: "Ago 2025", participantes: 138, equipos: 35 },
-  { label: "Sep 2025", participantes: 145, equipos: 38 },
-  { label: "Oct 2025", participantes: 158, equipos: 42 },
-]);
+const selectedTemporada = ref(temporadaId.value ?? "");
+const selectedCompetencia = ref(competenciaId.value ?? "");
+const vista = ref(competenciaId.value ? "competencia" : "temporada");
+const activeTab = ref("resumen");
+const generating = ref(false);
+const notice = ref({ type: "", message: "" });
 
-const institutionPerformance = computed(() => [
-  { institucion: "ESPOCH", competencias: 28, primeros: 12, segundos: 8, terceros: 6, total_podios: 26 },
-  { institucion: "EPN", competencias: 25, primeros: 10, segundos: 9, terceros: 4, total_podios: 23 },
-  { institucion: "UCE", competencias: 22, primeros: 6,  segundos: 8, terceros: 7, total_podios: 21 },
-  { institucion: "PUCE", competencias: 20, primeros: 5,  segundos: 6, terceros: 8, total_podios: 19 },
-  { institucion: "UTA",  competencias: 18, primeros: 4,  segundos: 5, terceros: 6, total_podios: 15 },
-]);
+const tabs = [
+  { id: "resumen", label: "Resumen" },
+  { id: "instituciones", label: "Instituciones" },
+  { id: "categorias", label: "Categorías" },
+  { id: "tendencias", label: "Tendencias" },
+  { id: "estado", label: "Estado del cierre" },
+];
 
+const selectedTemporadaData = computed(() => {
+  return temporadas.value.find((item) => Number(item.id) === Number(selectedTemporada.value)) ?? null;
+});
 
-// ============================
-//  TAB INSTITUCIÓN (SVG charts)
-// ============================
-const hoveredInst = ref(null); // índice de institución hover para tooltip (barras)
+const selectedCompetenciaData = computed(() => {
+  return competencias.value.find((item) => Number(item.id) === Number(selectedCompetencia.value)) ?? null;
+});
 
-const instChart = computed(() => {
-  const data = institutionPerformance.value;
+const activeCierre = computed(() => {
+  return vista.value === "competencia"
+    ? (cierreCompetencia.value ?? preliminarCompetencia.value)
+    : (cierreTemporada.value ?? preliminarTemporada.value);
+});
 
-  const w = 980;
-  const h = 360;
+const hasOfficialCierre = computed(() => {
+  return vista.value === "competencia" ? Boolean(cierreCompetencia.value) : Boolean(cierreTemporada.value);
+});
 
-  const padL = 48;
-  const padR = 20;
-  const padT = 20;
-  const padB = 50;
+const metrics = computed(() => activeCierre.value?.metricas ?? {});
+const resumen = computed(() => metrics.value.resumen_anual ?? {});
+const instituciones = computed(() => metrics.value.rendimiento_instituciones ?? []);
+const categorias = computed(() => metrics.value.distribucion_categorias ?? []);
+const indicadores = computed(() => metrics.value.indicadores_categorias ?? []);
+const comparativo = computed(() => metrics.value.comparativo_anual ?? []);
+const proyeccion = computed(() => metrics.value.proyeccion ?? null);
+const observaciones = computed(() => metrics.value.observaciones ?? []);
+const progresoCierre = computed(() => resumen.value.progreso_cierre ?? {
+  categorias_evaluables: 0,
+  categorias_cerradas: 0,
+  categorias_pendientes: 0,
+  porcentaje: 0,
+  pendientes: [],
+});
 
-  const maxY = Math.max(
-    ...data.map((d) => d.primeros),
-    ...data.map((d) => d.segundos),
-    ...data.map((d) => d.terceros),
-    1
-  );
+const temporadaListaParaCierre = computed(() => Boolean(selectedTemporadaData.value?.cerrable));
+const competenciaListaParaCierre = computed(() => Boolean(selectedCompetenciaData.value?.cerrable));
 
-  const groups = data.length;
-  const usableW = w - padL - padR;
-  const groupW = usableW / groups;
+const canGenerate = computed(() => {
+  if (generating.value || !selectedTemporada.value) return false;
+  if (vista.value === "competencia") {
+    return Number(selectedCompetencia.value) > 0 && competenciaListaParaCierre.value;
+  }
 
-  const barW = Math.min(46, Math.max(24, groupW * 0.22));
-  const gap = Math.max(10, (groupW - barW * 3) / 4); // gap interno dentro de cada grupo
+  return temporadaListaParaCierre.value;
+});
 
-  const yScale = (v) => {
-    const usableH = h - padT - padB;
-    const ratio = v / maxY;
-    return padT + (usableH - usableH * ratio);
-  };
+const statusInfo = computed(() => {
+  const item = vista.value === "competencia" ? selectedCompetenciaData.value : selectedTemporadaData.value;
 
-  const baselineY = h - padB;
-
-  const bars = data.map((d, i) => {
-    const gx = padL + i * groupW;
-
-    const x1 = gx + gap;
-    const x2 = gx + gap * 2 + barW;
-    const x3 = gx + gap * 3 + barW * 2;
-
-    const y1 = yScale(d.primeros);
-    const y2 = yScale(d.segundos);
-    const y3 = yScale(d.terceros);
-
+  if (hasOfficialCierre.value) {
     return {
-      label: d.institucion,
-      i,
-      v1: d.primeros,
-      v2: d.segundos,
-      v3: d.terceros,
-      rects: [
-        { x: x1, y: y1, w: barW, h: baselineY - y1, key: "1" },
-        { x: x2, y: y2, w: barW, h: baselineY - y2, key: "2" },
-        { x: x3, y: y3, w: barW, h: baselineY - y3, key: "3" },
-      ],
-      centerX: gx + groupW / 2,
+      label: "Cierre oficial",
+      detail: `Generado el ${formatDate(activeCierre.value?.cerrado_at || activeCierre.value?.generado_at)}`,
+      class: "bg-emerald-50 text-emerald-700 ring-emerald-200",
     };
-  });
+  }
 
-  // líneas de grilla (0, 3, 6, 9, 12 aprox)
-  const ticks = 4;
-  const grid = Array.from({ length: ticks + 1 }, (_, k) => {
-    const v = Math.round((maxY * k) / ticks);
-    const y = yScale(v);
-    return { v, y };
-  });
-
-  return { w, h, padL, padR, padT, padB, baselineY, bars, grid, maxY };
-});
-
-const rankingInstituciones = computed(() => {
-  // ranking por total podios (igual que tu card)
-  return [...institutionPerformance.value]
-    .sort((a, b) => (b.total_podios ?? 0) - (a.total_podios ?? 0));
-});
-
-const pieChart = computed(() => {
-  const data = institutionPerformance.value.map((d) => ({
-    label: d.institucion,
-    value: d.competencias, // o total_podios si quieres
-  }));
-
-  const total = data.reduce((acc, x) => acc + x.value, 0) || 1;
-
-  // Importante: padding para que NO se corten labels
-  const size = 340;      // área visible del SVG
-  const pad = 160;        // margen extra alrededor del pie
-  const vbSize = size + pad * 2; // viewBox más grande
-
-  const cx = vbSize / 2;
-  const cy = vbSize / 2;
-
-  const r = 180;         // radio del pie
-  const labelR = r + 34; // radio para labels (afuera)
-
-  const colors = ["#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ef4444", "#06b6d4"];
-
-  const polar = (radius, angle) => ({
-    x: cx + radius * Math.cos(angle),
-    y: cy + radius * Math.sin(angle),
-  });
-
-  let start = -Math.PI / 2;
-
-  const slices = data.map((d, idx) => {
-    const angle = (d.value / total) * Math.PI * 2;
-    const end = start + angle;
-
-    const p1 = polar(r, start);
-    const p2 = polar(r, end);
-
-    const largeArc = angle > Math.PI ? 1 : 0;
-
-    const path = [
-      `M ${cx} ${cy}`,
-      `L ${p1.x} ${p1.y}`,
-      `A ${r} ${r} 0 ${largeArc} 1 ${p2.x} ${p2.y}`,
-      "Z",
-    ].join(" ");
-
-    // Label: calculado con radio labelR (afuera)
-    const mid = (start + end) / 2;
-    const lp = polar(labelR, mid);
-
-    // Anchor según lado
-    const anchor = Math.cos(mid) >= 0 ? "start" : "end";
-
-    // Pequeño “empuje” horizontal para separarlo del borde
-    const offsetX = Math.cos(mid) >= 0 ? 8 : -8;
-
-    const slice = {
-      label: d.label,
-      value: d.value,
-      color: colors[idx % colors.length],
-      path,
-      lx: lp.x + offsetX,
-      ly: lp.y,
-      anchor,
+  if (activeCierre.value) {
+    return {
+      label: "Vista preliminar",
+      detail: "Puedes revisar el avance; el cierre oficial requiere todas las categorías finalizadas.",
+      class: "bg-amber-50 text-amber-700 ring-amber-200",
     };
+  }
 
-    start = end;
-    return slice;
-  });
+  if (item?.cerrable) {
+    return {
+      label: "Listo para cerrar",
+      detail: "La fecha de finalización ya concluyó.",
+      class: "bg-blue-50 text-blue-700 ring-blue-200",
+    };
+  }
 
   return {
-    // el svg real se dibuja con viewBox grande,
-    // pero se muestra en un tamaño normal (size)
-    size,
-    viewBox: `0 0 ${vbSize} ${vbSize}`,
-    slices,
+    label: "Pendiente",
+    detail: "El análisis aparecerá cuando existan datos en la temporada.",
+    class: "bg-amber-50 text-amber-700 ring-amber-200",
   };
 });
 
-
-
-const categoryDistribution = computed(() => [
-  { nombre: "Seguidor de Línea", porcentaje: 35, participantes: 245, tiempo_promedio: 13.5, mejor_tiempo: 12.1 },
-  { nombre: "Sumo",             porcentaje: 28, participantes: 196, tiempo_promedio: 18.2, mejor_tiempo: 14.9 },
-  { nombre: "Laberinto",        porcentaje: 22, participantes: 154, tiempo_promedio: 48.3, mejor_tiempo: 42.8 },
-  { nombre: "Velocista",        porcentaje: 18, participantes: 126, tiempo_promedio: 8.7,  mejor_tiempo: 7.2  },
-  { nombre: "Rescate",          porcentaje: 12, participantes: 84,  tiempo_promedio: 33.1, mejor_tiempo: 28.4 },
-  { nombre: "Evasión",          porcentaje: 10, participantes: 70,  tiempo_promedio: 21.6, mejor_tiempo: 18.9 },
-]);
-
-const growthProjection = computed(() => [
-  { anio: "2022", real: 450,  proyectado: null },
-  { anio: "2023", real: 680,  proyectado: null },
-  { anio: "2024", real: 920,  proyectado: null },
-  { anio: "2025", real: 1248, proyectado: 1248 },
-  { anio: "2026", real: null, proyectado: 1580 },
-  { anio: "2027", real: null, proyectado: 1950 },
-  { anio: "2028", real: null, proyectado: 2380 },
-]);
-
-// ============================
-//  STATS (cards superiores)
-// ============================
-const totalHistorico = computed(() => 1248);
-const promedioPorCompetencia = computed(() => 104);
-const instituciones = computed(() => 28);
-const tasaCrecimiento = computed(() => 42.8);
-
-const stats = computed(() => ([
+const kpis = computed(() => [
   {
-    title: "Total Participantes Histórico",
-    value: totalHistorico.value.toLocaleString("es-EC"),
-    change: "+36.2%",
-    trend: "up",
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    icon: PresentationChartLineIcon,
+    label: "Participantes",
+    value: activeCierre.value?.total_participantes ?? 0,
+    icon: UserGroupIcon,
+    tone: "bg-blue-50 text-blue-700",
+    delta: activeCierre.value?.tasa_crecimiento_participantes,
   },
   {
-    title: "Promedio por Competencia",
-    value: String(promedioPorCompetencia.value),
-    change: "+18.5%",
-    trend: "up",
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    icon: ChartBarIcon,
+    label: "Equipos",
+    value: activeCierre.value?.total_equipos ?? 0,
+    icon: TrophyIcon,
+    tone: "bg-violet-50 text-violet-700",
+    delta: activeCierre.value?.tasa_crecimiento_equipos,
   },
   {
-    title: "Instituciones Participantes",
-    value: String(instituciones.value),
-    change: "+12 nuevas",
-    trend: "up",
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
+    label: "Instituciones",
+    value: activeCierre.value?.total_instituciones ?? 0,
     icon: BuildingLibraryIcon,
+    tone: "bg-emerald-50 text-emerald-700",
+    delta: activeCierre.value?.tasa_crecimiento_instituciones,
   },
   {
-    title: "Tasa de Crecimiento Anual",
-    value: `${tasaCrecimiento.value.toFixed(1)}%`,
-    change: "Proyectado",
-    trend: "up",
-    iconBg: "bg-blue-50",
-    iconColor: "text-blue-600",
-    icon: ArrowTrendingUpIcon,
+    label: "Inscripciones aprobadas",
+    value: activeCierre.value?.total_inscripciones_aprobadas ?? 0,
+    icon: ClipboardDocumentCheckIcon,
+    tone: "bg-amber-50 text-amber-700",
+    delta: null,
   },
-]));
+]);
 
-// ============================
-//  CHART (SVG, sin librerías)
-//  - 2 áreas: participantes (azul) y equipos (verde)
-// ============================
-const hoveredIndex = ref(null);
+const cierreStats = computed(() => [
+  {
+    label: "Categorías evaluables",
+    value: progresoCierre.value.categorias_evaluables ?? 0,
+    tone: "bg-slate-50 text-slate-700",
+  },
+  {
+    label: "Categorías cerradas",
+    value: progresoCierre.value.categorias_cerradas ?? 0,
+    tone: "bg-emerald-50 text-emerald-700",
+  },
+  {
+    label: "Categorías pendientes",
+    value: progresoCierre.value.categorias_pendientes ?? 0,
+    tone: "bg-amber-50 text-amber-700",
+  },
+]);
 
-const chart = computed(() => {
-  const data = participationHistory.value;
-
-  const w = 980;
-  const h = 320;
-  const padL = 46;
-  const padR = 18;
-  const padT = 16;
-  const padB = 44;
-
-  const maxY = Math.max(
-    ...data.map((d) => d.participantes),
-    ...data.map((d) => d.equipos)
-  );
-
-  const xStep = (w - padL - padR) / Math.max(data.length - 1, 1);
-  const yScale = (val) => {
-    const usableH = h - padT - padB;
-    const ratio = maxY === 0 ? 0 : val / maxY;
-    return padT + (usableH - usableH * ratio);
-  };
-  const xAt = (i) => padL + i * xStep;
-
-  const points = data.map((d, i) => ({
-    x: xAt(i),
-    yP: yScale(d.participantes),
-    yE: yScale(d.equipos),
-    label: d.label,
-    participantes: d.participantes,
-    equipos: d.equipos,
-  }));
-
-  const linePath = (key) => points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${key === "P" ? p.yP : p.yE}`).join(" ");
-  const areaPath = (key) => {
-    const top = linePath(key);
-    const last = points[points.length - 1];
-    const first = points[0];
-    const y0 = h - padB;
-    return `${top} L ${last.x} ${y0} L ${first.x} ${y0} Z`;
-  };
-
-  return { w, h, padL, padR, padT, padB, points, lineP: linePath("P"), lineE: linePath("E"), areaP: areaPath("P"), areaE: areaPath("E") };
+const maxInstitucionScore = computed(() => {
+  return Math.max(...instituciones.value.map((item) => Number(item.puntaje_ponderado ?? 0)), 1);
 });
 
-// ============================
-//  EXPORTS (frontend-only stubs)
-// ============================
-function downloadBlob(filename, mime, content) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+const maxComparativoParticipantes = computed(() => {
+  return Math.max(...comparativo.value.map((item) => Number(item.participantes ?? 0)), 1);
+});
+
+const categoriaPrincipal = computed(() => categorias.value[0] ?? null);
+const institucionPrincipal = computed(() => instituciones.value[0] ?? null);
+
+function changeTemporada() {
+  selectedCompetencia.value = "";
+  vista.value = "temporada";
+  activeTab.value = "resumen";
+  router.get(
+    "/admin/analisis-historico",
+    { temporada_id: selectedTemporada.value },
+    { preserveScroll: true, preserveState: false, replace: true }
+  );
 }
 
-function exportCSV() {
-  // Ejemplo: exportar participación (puedes cambiar el dataset luego)
-  const rows = participationHistory.value.map((d) => ({
-    periodo: d.label,
-    participantes: d.participantes,
-    equipos: d.equipos,
-  }));
+function changeCompetencia() {
+  vista.value = selectedCompetencia.value ? "competencia" : "temporada";
+  activeTab.value = "resumen";
+  router.get(
+    "/admin/analisis-historico",
+    {
+      temporada_id: selectedTemporada.value,
+      competencia_id: selectedCompetencia.value || undefined,
+    },
+    { preserveScroll: true, preserveState: false, replace: true }
+  );
+}
 
-  const header = Object.keys(rows[0]).join(",");
-  const body = rows.map((r) => Object.values(r).join(",")).join("\n");
-  const csv = `${header}\n${body}\n`;
+function setVista(value) {
+  activeTab.value = "resumen";
+  vista.value = value;
+  if (value === "temporada") {
+    selectedCompetencia.value = "";
+    changeCompetencia();
+  } else if (!selectedCompetencia.value && competencias.value.length) {
+    selectedCompetencia.value = competencias.value[0].id;
+    changeCompetencia();
+  }
+}
 
-  downloadBlob(`informe_analisis_${selectedYear.value}.csv`, "text/csv;charset=utf-8", csv);
-  exportOpen.value = false;
+async function generarCierre() {
+  if (!canGenerate.value) return;
+
+  generating.value = true;
+  notice.value = { type: "", message: "" };
+
+  try {
+    const { data } = await axios.post("/admin/analisis-historico/generar", {
+      tipo_cierre: vista.value,
+      temporada_id: Number(selectedTemporada.value),
+      competencia_id: vista.value === "competencia" ? Number(selectedCompetencia.value) : null,
+    });
+
+    notice.value = { type: "success", message: data.message };
+    router.reload({
+      only: ["temporadas", "competencias", "cierreTemporada", "cierreCompetencia", "preliminarTemporada", "preliminarCompetencia"],
+      preserveScroll: true,
+    });
+  } catch (error) {
+    const errors = error?.response?.data?.errors ?? {};
+    const message = Object.values(errors)[0]?.[0];
+    notice.value = {
+      type: "error",
+      message: message || error?.response?.data?.message || "No se pudo generar el cierre.",
+    };
+  } finally {
+    generating.value = false;
+  }
 }
 
 function exportJSON() {
-  const payload = {
-    year: selectedYear.value,
-    stats: {
-      total_historico: totalHistorico.value,
-      promedio_por_competencia: promedioPorCompetencia.value,
-      instituciones: instituciones.value,
-      tasa_crecimiento: tasaCrecimiento.value,
-    },
-    participationHistory: participationHistory.value,
-    institutionPerformance: institutionPerformance.value,
-    categoryDistribution: categoryDistribution.value,
-    growthProjection: growthProjection.value,
-  };
-
-  downloadBlob(`informe_analisis_${selectedYear.value}.json`, "application/json;charset=utf-8", JSON.stringify(payload, null, 2));
-  exportOpen.value = false;
+  downloadBlob(
+    `analisis_historico_${vista.value}_${resumen.value.anio ?? "sin_anio"}.json`,
+    "application/json;charset=utf-8",
+    JSON.stringify(activeCierre.value ?? {}, null, 2)
+  );
 }
 
-function exportExcelCSV() {
-  // “Excel” sin librerías: CSV con BOM + nombre .xls (Excel lo abre OK en la práctica)
-  const rows = participationHistory.value.map((d) => ({
-    Periodo: d.label,
-    Participantes: d.participantes,
-    Equipos: d.equipos,
-  }));
+function exportCSV() {
+  const rows = [
+    ["Métrica", "Valor"],
+    ["Participantes", activeCierre.value?.total_participantes ?? 0],
+    ["Equipos", activeCierre.value?.total_equipos ?? 0],
+    ["Instituciones", activeCierre.value?.total_instituciones ?? 0],
+    ["Inscripciones aprobadas", activeCierre.value?.total_inscripciones_aprobadas ?? 0],
+    ["Categorías", activeCierre.value?.total_categorias ?? 0],
+    ["Competencias", activeCierre.value?.total_competencias ?? 0],
+  ];
 
-  const header = Object.keys(rows[0]).join(";");
-  const body = rows.map((r) => Object.values(r).join(";")).join("\n");
-  const bom = "\uFEFF";
-  const csv = `${bom}${header}\n${body}\n`;
-
-  downloadBlob(`informe_analisis_${selectedYear.value}.xls`, "application/vnd.ms-excel;charset=utf-8", csv);
-  exportOpen.value = false;
+  downloadBlob(
+    `analisis_historico_${vista.value}_${resumen.value.anio ?? "sin_anio"}.csv`,
+    "text/csv;charset=utf-8",
+    rows.map((row) => row.join(",")).join("\n")
+  );
 }
 
-function exportPDFPrint() {
-  // Sin dependencias: imprime la vista (ideal: luego haces endpoint real para PDF)
-  exportOpen.value = false;
-  window.print();
+function downloadBlob(filename, mime, content) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
-defineOptions({ layout: AdminLayout });
+function formatNumber(value) {
+  return new Intl.NumberFormat("es-EC").format(Number(value ?? 0));
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined) return "Sin histórico previo";
+  const number = Number(value);
+  const sign = number > 0 ? "+" : "";
+  return `${sign}${number.toFixed(1)}% vs año anterior`;
+}
+
+function formatDate(value) {
+  if (!value) return "sin fecha";
+
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function formatShortDate(value) {
+  if (!value) return "-";
+
+  return new Intl.DateTimeFormat("es-EC", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
+function formatMetric(value, suffix = "") {
+  if (value === null || value === undefined) return "-";
+  return `${Number(value).toFixed(2)}${suffix}`;
+}
 </script>
 
 <template>
-  <div class="w-full">
-    <!-- Contenedor como tu módulo de Categorías (max width + spacing) -->
-    <div class="mx-auto w-full max-w-[1180px] px-4 sm:px-6 lg:px-4 py-6 space-y-6">
-      <!-- Header -->
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+  <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+    <div class="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 shadow-sm">
+      <div class="grid gap-6 p-6 text-white lg:grid-cols-[1fr_360px] lg:p-7">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900">Análisis Histórico y Proyecciones</h1>
-          <p class="text-sm text-slate-500">Estadísticas, tendencias y análisis predictivo de competencias</p>
-        </div>
-
-        <div class="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-          <!-- Year select -->
-          <div class="relative w-full sm:w-[140px]">
-            <select
-              v-model="selectedYear"
-              class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-              <option value="2023">2023</option>
-              <option value="all">Todos</option>
-            </select>
+          <div class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-blue-100 ring-1 ring-white/15">
+            <PresentationChartLineIcon class="h-4 w-4" />
+            Panel histórico oficial
           </div>
-
-          <!-- Export dropdown -->
-          <div class="relative w-full sm:w-auto">
-            <button
-              id="export-btn"
-              type="button"
-              @click="exportOpen = !exportOpen"
-              class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 transition w-full sm:w-auto"
-            >
-              <ArrowDownTrayIcon class="w-5 h-5 text-slate-700" />
-              <span class="text-sm font-medium text-slate-900">Exportar informe</span>
-              <ChevronDownIcon class="w-4 h-4 text-slate-600" />
-            </button>
-
-            <div
-              v-if="exportOpen"
-              id="export-menu"
-              class="absolute right-0 mt-2 w-full sm:w-[240px] rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden z-50"
-            >
-              <div class="p-2">
-                <button
-                  type="button"
-                  @click="exportPDFPrint"
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-left"
-                >
-                  <span class="h-8 w-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700">PDF</span>
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-900">PDF</p>
-                    <p class="text-xs text-slate-500">Imprimir / Guardar como PDF</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  @click="exportExcelCSV"
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-left"
-                >
-                  <span class="h-8 w-8 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-700">XLS</span>
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-900">Excel</p>
-                    <p class="text-xs text-slate-500">CSV compatible para Excel</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  @click="exportCSV"
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-left"
-                >
-                  <span class="h-8 w-8 rounded-xl bg-blue-50 flex items-center justify-center text-blue-700">CSV</span>
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-900">CSV</p>
-                    <p class="text-xs text-slate-500">Datos tabulares</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  @click="exportJSON"
-                  class="w-full flex items-center gap-2 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-left"
-                >
-                  <span class="h-8 w-8 rounded-xl bg-violet-50 flex items-center justify-center text-violet-700">JSON</span>
-                  <div class="min-w-0">
-                    <p class="text-sm font-medium text-slate-900">JSON</p>
-                    <p class="text-xs text-slate-500">Ideal para integraciones</p>
-                  </div>
-                </button>
-              </div>
-
-              <div class="px-3 pb-3">
-                <div class="flex items-start gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3">
-                  <InformationCircleIcon class="w-5 h-5 text-slate-600 mt-0.5" />
-                  <p class="text-xs text-slate-600 leading-relaxed">
-                    Por ahora es exportación <b>frontend-only</b> (mock). Luego conectas a tu backend para PDF/Excel reales.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Stats cards -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div
-          v-for="(s, idx) in stats"
-          :key="idx"
-          class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
-          <div class="flex items-start justify-between gap-4">
-            <div class="h-10 w-10 rounded-xl flex items-center justify-center" :class="s.iconBg">
-              <component :is="s.icon" class="w-5 h-5" :class="s.iconColor" />
-            </div>
-
-            <component
-              :is="s.trend === 'up' ? ArrowTrendingUpIcon : ArrowTrendingDownIcon"
-              class="w-5 h-5"
-              :class="s.trend === 'up' ? 'text-emerald-600' : 'text-red-600'"
-            />
-          </div>
-
-          <p class="text-3xl font-semibold text-slate-900 mt-4">{{ s.value }}</p>
-          <p class="text-sm text-slate-600 mt-1">{{ s.title }}</p>
-          <p class="text-xs mt-2" :class="s.trend === 'up' ? 'text-emerald-600' : 'text-red-600'">
-            {{ s.change }}
+          <h1 class="mt-4 text-3xl font-bold tracking-tight">Análisis Histórico</h1>
+          <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+            Consulta cierres anuales por temporada y revisa el detalle de cada competencia con métricas consolidadas para administración.
           </p>
+
+          <div class="mt-5 flex flex-wrap items-center gap-2">
+            <span class="inline-flex rounded-full px-3 py-1 text-xs font-bold ring-1" :class="statusInfo.class">
+              {{ statusInfo.label }}
+            </span>
+            <span class="text-xs text-slate-300">{{ statusInfo.detail }}</span>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-white p-4 text-slate-900 shadow-xl">
+          <div class="grid gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Temporada</label>
+              <select
+                v-model="selectedTemporada"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                @change="changeTemporada"
+              >
+                <option v-for="temporada in temporadas" :key="temporada.id" :value="temporada.id">
+                  {{ temporada.nombre }} - {{ temporada.anio }}
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label class="mb-1 block text-xs font-bold uppercase tracking-wide text-slate-500">Detalle por competencia</label>
+              <select
+                v-model="selectedCompetencia"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                @change="changeCompetencia"
+              >
+                <option value="">Ver temporada completa</option>
+                <option v-for="competencia in competencias" :key="competencia.id" :value="competencia.id">
+                  {{ competencia.nombre }}
+                </option>
+              </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="rounded-xl px-3 py-2 text-sm font-bold transition"
+                :class="vista === 'temporada' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                @click="setVista('temporada')"
+              >
+                Temporada
+              </button>
+              <button
+                type="button"
+                class="rounded-xl px-3 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                :class="vista === 'competencia' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'"
+                :disabled="!competencias.length"
+                @click="setVista('competencia')"
+              >
+                Competencia
+              </button>
+            </div>
+          </div>
         </div>
       </div>
+    </div>
 
-      <!-- Tabs (pill style) -->
+    <div
+      v-if="notice.message"
+      class="flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
+      :class="notice.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'"
+    >
+      <CheckCircleIcon class="mt-0.5 h-5 w-5 shrink-0" />
+      <span>{{ notice.message }}</span>
+    </div>
+
+    <div class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <p class="text-sm font-semibold text-slate-900">
+          {{ vista === "competencia" ? selectedCompetenciaData?.nombre : selectedTemporadaData?.nombre }}
+        </p>
+        <p class="mt-1 text-sm text-slate-500">
+          {{ activeCierre ? `Periodo analizado: ${formatShortDate(activeCierre.fecha_inicio)} - ${formatShortDate(activeCierre.fecha_fin)}` : "Aún no existe información para esta selección." }}
+        </p>
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <button
           type="button"
-          @click="activeTab = 'participacion'"
-          class="px-4 py-2 rounded-full text-sm font-medium border transition"
-          :class="activeTab === 'participacion'
-            ? 'bg-white border-slate-200 text-slate-900 shadow-sm'
-            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-50'"
+          class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="!canGenerate"
+          @click="generarCierre"
         >
-          Participación
+          <ArrowPathIcon class="h-5 w-5" :class="{ 'animate-spin': generating }" />
+          {{ hasOfficialCierre ? "Actualizar cierre" : "Generar cierre oficial" }}
         </button>
-
         <button
           type="button"
-          @click="activeTab = 'institucion'"
-          class="px-4 py-2 rounded-full text-sm font-medium border transition"
-          :class="activeTab === 'institucion'
-            ? 'bg-white border-slate-200 text-slate-900 shadow-sm'
-            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-50'"
+          class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          :disabled="!activeCierre"
+          @click="exportCSV"
         >
-          Por Institución
+          <ArrowDownTrayIcon class="h-5 w-5" />
+          CSV
         </button>
-
         <button
           type="button"
-          @click="activeTab = 'categorias'"
-          class="px-4 py-2 rounded-full text-sm font-medium border transition"
-          :class="activeTab === 'categorias'
-            ? 'bg-white border-slate-200 text-slate-900 shadow-sm'
-            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-50'"
+          class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          :disabled="!activeCierre"
+          @click="exportJSON"
         >
-          Categorías
-        </button>
-
-        <button
-          type="button"
-          @click="activeTab = 'proyecciones'"
-          class="px-4 py-2 rounded-full text-sm font-medium border transition"
-          :class="activeTab === 'proyecciones'
-            ? 'bg-white border-slate-200 text-slate-900 shadow-sm'
-            : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-50'"
-        >
-          Proyecciones
+          <ArrowDownTrayIcon class="h-5 w-5" />
+          JSON
         </button>
       </div>
+    </div>
 
-      <!-- ==========================
-           TAB: Participación
-      =========================== -->
-      <div v-if="activeTab === 'participacion'" class="space-y-6">
-        <!-- Chart Card -->
-        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div class="p-5 sm:p-6 border-b border-slate-200">
-            <h2 class="text-lg font-semibold text-slate-900">Evolución de Participación {{ selectedYear === 'all' ? '' : selectedYear }}</h2>
-          </div>
+    <div v-if="!activeCierre" class="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
+      <SparklesIcon class="mx-auto h-12 w-12 text-slate-300" />
+      <h2 class="mt-4 text-xl font-bold text-slate-900">Sin análisis disponible</h2>
+      <p class="mx-auto mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+        Asigna competencias a una temporada y registra resultados para que el sistema pueda construir el análisis histórico.
+      </p>
+    </div>
 
-          <div class="p-5 sm:p-6">
-            <div class="w-full overflow-x-auto">
-              <div class="min-w-[980px]">
-                <svg :width="chart.w" :height="chart.h" class="block">
-                  <defs>
-                    <linearGradient id="gradP" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.28" />
-                      <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
-                    </linearGradient>
-                    <linearGradient id="gradE" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stop-color="#10b981" stop-opacity="0.25" />
-                      <stop offset="100%" stop-color="#10b981" stop-opacity="0" />
-                    </linearGradient>
-                  </defs>
-
-                  <!-- grid -->
-                  <g>
-                    <line
-                      v-for="i in 4"
-                      :key="i"
-                      :x1="chart.padL"
-                      :x2="chart.w - chart.padR"
-                      :y1="(chart.padT + ((chart.h - chart.padT - chart.padB) * i) / 4)"
-                      :y2="(chart.padT + ((chart.h - chart.padT - chart.padB) * i) / 4)"
-                      stroke="#e2e8f0"
-                      stroke-dasharray="3 4"
-                    />
-                  </g>
-
-                  <!-- areas -->
-                  <path :d="chart.areaP" fill="url(#gradP)" />
-                  <path :d="chart.areaE" fill="url(#gradE)" />
-
-                  <!-- lines -->
-                  <path :d="chart.lineP" fill="none" stroke="#2563eb" stroke-width="2.5" />
-                  <path :d="chart.lineE" fill="none" stroke="#10b981" stroke-width="2.5" />
-
-                  <!-- points + tooltip -->
-                  <g v-for="(p, i) in chart.points" :key="i">
-                    <circle
-                      :cx="p.x"
-                      :cy="p.yP"
-                      r="5"
-                      fill="#2563eb"
-                      stroke="white"
-                      stroke-width="2"
-                      class="cursor-pointer"
-                      @mouseenter="hoveredIndex = i"
-                      @mouseleave="hoveredIndex = null"
-                    />
-                    <circle
-                      :cx="p.x"
-                      :cy="p.yE"
-                      r="5"
-                      fill="#10b981"
-                      stroke="white"
-                      stroke-width="2"
-                      class="cursor-pointer"
-                      @mouseenter="hoveredIndex = i"
-                      @mouseleave="hoveredIndex = null"
-                    />
-                  </g>
-
-                  <!-- labels eje X -->
-                  <g v-for="(p, i) in chart.points" :key="'lbl'+i">
-                    <text
-                      :x="p.x"
-                      :y="chart.h - 18"
-                      text-anchor="middle"
-                      font-size="12"
-                      fill="#64748b"
-                    >
-                      {{ p.label.split(" ")[0] }}
-                    </text>
-                  </g>
-
-                  <!-- Tooltip box (simple, tipo screenshot) -->
-                  <g v-if="hoveredIndex !== null">
-                    <rect
-                      :x="Math.min(chart.points[hoveredIndex].x + 12, chart.w - 210)"
-                      :y="Math.max(chart.points[hoveredIndex].yP - 80, 20)"
-                      width="190"
-                      height="70"
-                      rx="12"
-                      fill="white"
-                      stroke="#e2e8f0"
-                    />
-                    <text
-                      :x="Math.min(chart.points[hoveredIndex].x + 24, chart.w - 198)"
-                      :y="Math.max(chart.points[hoveredIndex].yP - 52, 44)"
-                      font-size="13"
-                      fill="#0f172a"
-                      font-weight="600"
-                    >
-                      {{ chart.points[hoveredIndex].label }}
-                    </text>
-
-                    <text
-                      :x="Math.min(chart.points[hoveredIndex].x + 24, chart.w - 198)"
-                      :y="Math.max(chart.points[hoveredIndex].yP - 30, 66)"
-                      font-size="12"
-                      fill="#10b981"
-                      font-weight="600"
-                    >
-                      Equipos: {{ chart.points[hoveredIndex].equipos }}
-                    </text>
-
-                    <text
-                      :x="Math.min(chart.points[hoveredIndex].x + 24, chart.w - 198)"
-                      :y="Math.max(chart.points[hoveredIndex].yP - 12, 84)"
-                      font-size="12"
-                      fill="#2563eb"
-                      font-weight="600"
-                    >
-                      Participantes: {{ chart.points[hoveredIndex].participantes }}
-                    </text>
-                  </g>
-                </svg>
-
-                <!-- Legend -->
-                <div class="flex items-center justify-center gap-6 mt-3 text-sm">
-                  <div class="flex items-center gap-2">
-                    <span class="h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-                    <span class="text-slate-600">Equipos</span>
-                  </div>
-                  <div class="flex items-center gap-2">
-                    <span class="h-2.5 w-2.5 rounded-full bg-blue-600"></span>
-                    <span class="text-slate-600">Participantes</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Cards inferiores tipo screenshot -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div
-            v-for="(c, idx) in categoryDistribution.slice(0, 3)"
-            :key="idx"
-            class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+    <template v-else>
+      <div class="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            type="button"
+            class="rounded-xl px-3 py-2.5 text-sm font-bold transition"
+            :class="activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+            @click="activeTab = tab.id"
           >
-            <h3 class="text-base font-semibold text-slate-900">{{ c.nombre }}</h3>
+            {{ tab.label }}
+          </button>
+        </div>
+      </div>
 
+      <section v-if="activeTab === 'resumen'" class="space-y-5">
+        <div
+          v-if="!hasOfficialCierre"
+          class="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-amber-900 shadow-sm"
+        >
+          <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p class="font-bold">Vista preliminar del análisis</p>
+              <p class="mt-1 text-sm leading-6">
+                {{ progresoCierre.categorias_cerradas }} de {{ progresoCierre.categorias_evaluables }} categorías evaluables están finalizadas.
+                El cierre oficial se habilita cuando no existan categorías pendientes.
+              </p>
+            </div>
+            <div class="min-w-[220px]">
+              <div class="mb-1 flex justify-between text-xs font-bold">
+                <span>Progreso</span>
+                <span>{{ progresoCierre.porcentaje }}%</span>
+              </div>
+              <div class="h-3 overflow-hidden rounded-full bg-white/80">
+                <div class="h-full rounded-full bg-amber-500" :style="{ width: `${progresoCierre.porcentaje}%` }"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div v-for="kpi in kpis" :key="kpi.label" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div class="rounded-xl p-3" :class="kpi.tone">
+                <component :is="kpi.icon" class="h-6 w-6" />
+              </div>
+              <ArrowTrendingUpIcon v-if="kpi.delta !== null && kpi.delta !== undefined" class="h-5 w-5 text-emerald-600" />
+            </div>
+            <p class="mt-4 text-3xl font-bold text-slate-900">{{ formatNumber(kpi.value) }}</p>
+            <p class="mt-1 text-sm font-medium text-slate-500">{{ kpi.label }}</p>
+            <p class="mt-2 text-xs font-semibold" :class="kpi.delta === null || kpi.delta === undefined ? 'text-slate-400' : 'text-emerald-700'">
+              {{ formatPercent(kpi.delta) }}
+            </p>
+          </div>
+        </div>
+
+        <div class="grid gap-4 lg:grid-cols-[1fr_360px]">
+          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-900">Lectura rápida</h2>
+            <div class="mt-4 grid gap-3 md:grid-cols-2">
+              <div v-for="item in observaciones" :key="item" class="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                {{ item }}
+              </div>
+              <div v-if="!observaciones.length" class="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                Aún no hay observaciones automáticas para esta selección.
+              </div>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-900">Estado general</h2>
             <div class="mt-4 space-y-3">
-              <div>
-                <p class="text-sm text-slate-600">Tiempo Promedio</p>
-                <p class="text-slate-900 font-semibold">{{ c.tiempo_promedio }}s</p>
-              </div>
-              <div>
-                <p class="text-sm text-slate-600">Mejor Tiempo</p>
-                <p class="text-emerald-600 font-semibold">{{ c.mejor_tiempo }}s</p>
-              </div>
-              <div>
-                <p class="text-sm text-slate-600">Total Participantes</p>
-                <p class="text-blue-600 font-semibold">{{ c.participantes }}</p>
+              <div v-for="stat in cierreStats" :key="stat.label" class="flex items-center justify-between rounded-xl p-4" :class="stat.tone">
+                <span class="text-sm font-semibold">{{ stat.label }}</span>
+                <span class="text-2xl font-black">{{ formatNumber(stat.value) }}</span>
               </div>
             </div>
+          </section>
+        </div>
+      </section>
+
+      <section v-else-if="activeTab === 'instituciones'" class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Rendimiento por institución</h2>
+              <p class="text-sm text-slate-500">Ranking ponderado: 1.º lugar = 3 pts, 2.º = 2 pts, 3.º = 1 pt.</p>
+            </div>
+            <ChartBarIcon class="h-6 w-6 text-blue-600" />
           </div>
-        </div>
-      </div>
 
-      <!-- ==========================
-        TAB: Por Institución
-        =========================== -->
-        <div v-if="activeTab === 'institucion'" class="space-y-6">
-        <!-- Card superior: Barras -->
-        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div class="p-5 sm:p-6">
-            <h2 class="text-lg font-semibold text-slate-900">Rendimiento Histórico por Institución</h2>
-            </div>
-
-            <div class="px-5 sm:px-6 pb-6">
-            <div class="w-full overflow-x-auto">
-                <div class="min-w-[980px] relative">
-                <svg :width="instChart.w" :height="instChart.h" class="block">
-                    <!-- grid -->
-                    <g>
-                    <line
-                        v-for="(g, idx) in instChart.grid"
-                        :key="'g'+idx"
-                        :x1="instChart.padL"
-                        :x2="instChart.w - instChart.padR"
-                        :y1="g.y"
-                        :y2="g.y"
-                        stroke="#e2e8f0"
-                        stroke-dasharray="3 4"
-                    />
-                    <!-- axis labels -->
-                    <text
-                        v-for="(g, idx) in instChart.grid"
-                        :key="'t'+idx"
-                        :x="instChart.padL - 8"
-                        :y="g.y + 4"
-                        text-anchor="end"
-                        font-size="12"
-                        fill="#64748b"
-                    >
-                        {{ g.v }}
-                    </text>
-                    </g>
-
-                    <!-- bars -->
-                    <g v-for="b in instChart.bars" :key="b.label">
-                    <!-- 1° -->
-                    <rect
-                        :x="b.rects[0].x"
-                        :y="b.rects[0].y"
-                        :width="b.rects[0].w"
-                        :height="b.rects[0].h"
-                        rx="6"
-                        fill="#f59e0b"
-                        class="cursor-pointer"
-                        @mouseenter="hoveredInst = b.i"
-                        @mouseleave="hoveredInst = null"
-                    />
-                    <!-- 2° -->
-                    <rect
-                        :x="b.rects[1].x"
-                        :y="b.rects[1].y"
-                        :width="b.rects[1].w"
-                        :height="b.rects[1].h"
-                        rx="6"
-                        fill="#94a3b8"
-                        class="cursor-pointer"
-                        @mouseenter="hoveredInst = b.i"
-                        @mouseleave="hoveredInst = null"
-                    />
-                    <!-- 3° -->
-                    <rect
-                        :x="b.rects[2].x"
-                        :y="b.rects[2].y"
-                        :width="b.rects[2].w"
-                        :height="b.rects[2].h"
-                        rx="6"
-                        fill="#c0843a"
-                        class="cursor-pointer"
-                        @mouseenter="hoveredInst = b.i"
-                        @mouseleave="hoveredInst = null"
-                    />
-
-                    <!-- x labels -->
-                    <text
-                        :x="b.centerX"
-                        :y="instChart.h - 18"
-                        text-anchor="middle"
-                        font-size="12"
-                        fill="#64748b"
-                    >
-                        {{ b.label }}
-                    </text>
-                    </g>
-
-                    <!-- tooltip tipo imagen -->
-                    <g v-if="hoveredInst !== null">
-                    <template v-for="b in instChart.bars" :key="'tip'+b.i">
-                        <g v-if="b.i === hoveredInst">
-                        <rect
-                            :x="Math.min(b.centerX - 85, instChart.w - 210)"
-                            :y="90"
-                            width="190"
-                            height="110"
-                            rx="12"
-                            fill="white"
-                            stroke="#e2e8f0"
-                        />
-                        <text :x="Math.min(b.centerX - 65, instChart.w - 190)" y="118" font-size="13" fill="#0f172a" font-weight="700">
-                            {{ b.label }}
-                        </text>
-
-                        <text :x="Math.min(b.centerX - 65, instChart.w - 190)" y="146" font-size="12" fill="#f59e0b" font-weight="700">
-                            1° Lugar : {{ b.v1 }}
-                        </text>
-                        <text :x="Math.min(b.centerX - 65, instChart.w - 190)" y="170" font-size="12" fill="#94a3b8" font-weight="700">
-                            2° Lugar : {{ b.v2 }}
-                        </text>
-                        <text :x="Math.min(b.centerX - 65, instChart.w - 190)" y="194" font-size="12" fill="#c0843a" font-weight="700">
-                            3° Lugar : {{ b.v3 }}
-                        </text>
-                        </g>
-                    </template>
-                    </g>
-                </svg>
-
-                <!-- legend (igual a la imagen) -->
-                <div class="flex items-center justify-center gap-6 mt-3 text-sm">
-                    <div class="flex items-center gap-2">
-                    <span class="h-2.5 w-2.5 rounded-sm" style="background:#f59e0b"></span>
-                    <span class="text-slate-600">1° Lugar</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                    <span class="h-2.5 w-2.5 rounded-sm" style="background:#94a3b8"></span>
-                    <span class="text-slate-600">2° Lugar</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                    <span class="h-2.5 w-2.5 rounded-sm" style="background:#c0843a"></span>
-                    <span class="text-slate-600">3° Lugar</span>
-                    </div>
-                </div>
-                </div>
-            </div>
-            </div>
-        </div>
-
-        <!-- Abajo: ranking + pie -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <!-- Ranking (izq) -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 class="text-lg font-semibold text-slate-900">Ranking de Instituciones</h3>
-
-            <div class="mt-5 space-y-3">
+          <div class="mt-5 space-y-4">
+            <div v-for="(item, index) in instituciones" :key="item.institucion">
+              <div class="mb-1 flex items-center justify-between gap-3 text-sm">
+                <span class="font-semibold text-slate-800">{{ index + 1 }}. {{ item.institucion }}</span>
+                <span class="font-bold text-slate-900">{{ item.puntaje_ponderado }} pts</span>
+              </div>
+              <div class="h-3 overflow-hidden rounded-full bg-slate-100">
                 <div
-                v-for="(inst, idx) in rankingInstituciones"
-                :key="inst.institucion"
-                class="flex items-center justify-between p-4 rounded-2xl bg-slate-50 border border-slate-200"
-                >
+                  class="h-full rounded-full bg-gradient-to-r from-blue-600 to-emerald-500"
+                  :style="{ width: `${Math.max(6, (Number(item.puntaje_ponderado) / maxInstitucionScore) * 100)}%` }"
+                ></div>
+              </div>
+              <p class="mt-1 text-xs text-slate-500">
+                {{ item.primeros }} primeros, {{ item.segundos }} segundos, {{ item.terceros }} terceros
+              </p>
+            </div>
+            <p v-if="!instituciones.length" class="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+              No existen instituciones con podios registrados.
+            </p>
+          </div>
+        </section>
+
+        <aside class="space-y-4">
+          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-900">Institución líder</h2>
+            <div v-if="institucionPrincipal" class="mt-4 rounded-xl bg-blue-50 p-5">
+              <p class="text-xs font-bold uppercase tracking-wide text-blue-700">Mejor posicionada</p>
+              <p class="mt-2 text-2xl font-black text-slate-900">{{ institucionPrincipal.institucion }}</p>
+              <p class="mt-2 text-sm text-slate-600">
+                {{ institucionPrincipal.total_podios }} podios y {{ institucionPrincipal.equipos }} equipos.
+              </p>
+            </div>
+          </section>
+
+          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 class="text-lg font-bold text-slate-900">Top 5</h2>
+            <div class="mt-4 space-y-3">
+              <div
+                v-for="(item, index) in instituciones.slice(0, 5)"
+                :key="item.institucion"
+                class="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-4"
+              >
                 <div class="flex items-center gap-3">
-                    <div
-                    class="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold"
-                    :class="idx === 0 ? 'bg-yellow-100 text-yellow-700'
-                        : idx === 1 ? 'bg-slate-100 text-slate-700'
-                        : idx === 2 ? 'bg-orange-100 text-orange-700'
-                        : 'bg-blue-100 text-blue-700'"
-                    >
-                    {{ idx + 1 }}
-                    </div>
-
-                    <div>
-                    <p class="font-semibold text-slate-900">{{ inst.institucion }}</p>
-                    <p class="text-xs text-slate-600">{{ inst.total_podios }} podios totales</p>
-                    </div>
+                  <div
+                    class="flex h-9 w-9 items-center justify-center rounded-full text-sm font-black"
+                    :class="index === 0 ? 'bg-amber-100 text-amber-700' : index === 1 ? 'bg-slate-200 text-slate-700' : index === 2 ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'"
+                  >
+                    {{ index + 1 }}
+                  </div>
+                  <div>
+                    <p class="font-bold text-slate-900">{{ item.institucion }}</p>
+                    <p class="text-xs text-slate-500">{{ item.total_podios }} podios</p>
+                  </div>
                 </div>
-
-                <div class="text-right">
-                    <p class="font-semibold text-slate-900">{{ inst.primeros }}</p>
-                    <p class="text-xs text-slate-600">victorias</p>
-                </div>
-                </div>
-            </div>
-            </div>
-
-            <!-- Pie chart (der) -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 class="text-lg font-semibold text-slate-900">Participación por Institución</h3>
-
-            <div class="mt-6 flex items-center justify-center">
-                <svg
-                    :width="pieChart.size"
-                    :height="pieChart.size"
-                    :viewBox="pieChart.viewBox"
-                    class="block"
-                >
-
-                <g v-for="(s, idx) in pieChart.slices" :key="idx">
-                    <path :d="s.path" :fill="s.color" stroke="white" stroke-width="2" />
-                    <text
-                    :x="s.lx"
-                    :y="s.ly"
-                    :text-anchor="s.anchor"
-                    font-size="25"
-                    :fill="s.color"
-                    font-weight="700"
-                    >
-                    {{ s.label }}: {{ s.value }}
-                    </text>
-                </g>
-                </svg>
-            </div>
-            </div>
-        </div>
-        </div>
-
-
-      <!-- ==========================
-           TAB: Categorías
-      =========================== -->
-      <div v-if="activeTab === 'categorias'" class="space-y-6">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900">Distribución por Categorías</h3>
-                <p class="text-sm text-slate-500 mt-1">Popularidad estimada (mock)</p>
-              </div>
-              <div class="h-10 w-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                <TagIcon class="w-5 h-5 text-blue-600" />
+                <p class="text-sm font-bold text-blue-700">{{ item.equipos }} equipos</p>
               </div>
             </div>
+          </section>
+        </aside>
+      </section>
 
-            <div class="mt-5 space-y-3">
-              <div
-                v-for="(c, idx) in categoryDistribution"
-                :key="idx"
-                class="rounded-xl border border-slate-200 p-4"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <p class="font-semibold text-slate-900">{{ c.nombre }}</p>
-                  <span class="text-sm font-semibold text-blue-600">{{ c.porcentaje }}%</span>
-                </div>
-
-                <div class="mt-3 w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                  <div class="h-2 rounded-full bg-blue-600" :style="{ width: `${c.porcentaje}%` }"></div>
-                </div>
-
-                <div class="mt-3 flex items-center justify-between text-sm">
-                  <span class="text-slate-600">Participantes</span>
-                  <span class="text-emerald-600 font-semibold">{{ c.participantes }}</span>
-                </div>
-              </div>
-            </div>
+      <section v-else-if="activeTab === 'categorias'" class="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900">Participación por categorías</h2>
+          <div v-if="categoriaPrincipal" class="mt-4 rounded-xl bg-blue-50 p-4">
+            <p class="text-xs font-bold uppercase tracking-wide text-blue-700">Categoría con más inscripciones</p>
+            <p class="mt-2 text-xl font-black text-slate-900">{{ categoriaPrincipal.nombre }}</p>
+            <p class="mt-1 text-sm text-slate-600">
+              {{ formatNumber(categoriaPrincipal.inscripciones) }} inscripciones aprobadas, {{ categoriaPrincipal.porcentaje }}% del total.
+            </p>
           </div>
 
-          <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div class="flex items-start justify-between gap-4">
-              <div>
-                <h3 class="text-lg font-semibold text-slate-900">Indicadores por Categoría</h3>
-                <p class="text-sm text-slate-500 mt-1">Tiempos y participación (mock)</p>
-              </div>
-              <div class="h-10 w-10 rounded-xl bg-emerald-50 flex items-center justify-center">
-                <ChartBarIcon class="w-5 h-5 text-emerald-600" />
-              </div>
-            </div>
-
-            <div class="mt-5 space-y-3">
-              <div
-                v-for="(c, idx) in categoryDistribution.slice(0, 4)"
-                :key="idx"
-                class="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200"
-              >
+          <div class="mt-5 space-y-3">
+            <div v-for="categoria in categorias" :key="categoria.categoria_id" class="rounded-xl border border-slate-200 p-4">
+              <div class="flex items-center justify-between gap-3">
                 <div>
-                  <p class="font-semibold text-slate-900">{{ c.nombre }}</p>
-                  <p class="text-xs text-slate-600 mt-1">
-                    Prom: {{ c.tiempo_promedio }}s · Mejor: {{ c.mejor_tiempo }}s
-                  </p>
+                  <p class="font-bold text-slate-900">{{ categoria.nombre }}</p>
+                  <p class="text-xs text-slate-500">{{ formatNumber(categoria.inscripciones) }} inscripciones aprobadas</p>
                 </div>
-                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ring-1 bg-blue-50 text-blue-700 ring-blue-200">
-                  {{ c.participantes }}
-                </span>
+                <p class="text-sm font-black text-blue-700">{{ categoria.porcentaje }}%</p>
+              </div>
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div class="h-full rounded-full bg-blue-600" :style="{ width: `${categoria.porcentaje}%` }"></div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+        </section>
 
-      <!-- ==========================
-           TAB: Proyecciones
-      =========================== -->
-      <div v-if="activeTab === 'proyecciones'" class="space-y-6">
-        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-          <div class="p-5 sm:p-6 border-b border-slate-200">
-            <h2 class="text-lg font-semibold text-slate-900">Proyección de Crecimiento (2022–2028)</h2>
-          </div>
-
-          <div class="p-5 sm:p-6 overflow-x-auto">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900">Indicadores técnicos por categoría</h2>
+          <p class="mt-1 text-sm text-slate-500">Resultados registrados, mejor tiempo y mejor puntaje según el mecanismo de calificación.</p>
+          <div class="mt-5 overflow-x-auto">
             <table class="min-w-full text-sm">
-              <thead class="bg-white">
-                <tr class="text-left text-black border-b border-slate-200">
-                  <th class="px-4 py-3 font-medium">Año</th>
-                  <th class="px-4 py-3 font-medium">Real</th>
-                  <th class="px-4 py-3 font-medium">Proyectado</th>
+              <thead class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th class="px-4 py-3">Categoría</th>
+                  <th class="px-4 py-3">Resultados</th>
+                  <th class="px-4 py-3">Mejor tiempo</th>
+                  <th class="px-4 py-3">Mejor puntaje</th>
                 </tr>
               </thead>
-
-              <tbody class="divide-y divide-slate-200">
-                <tr v-for="(g, idx) in growthProjection" :key="idx" class="hover:bg-slate-50/60">
-                  <td class="px-4 py-3 font-semibold text-slate-900">{{ g.anio }}</td>
-                  <td class="px-4 py-3 text-slate-700">
-                    <span v-if="g.real !== null">{{ g.real.toLocaleString("es-EC") }}</span>
-                    <span v-else class="text-slate-400">—</span>
-                  </td>
-                  <td class="px-4 py-3 text-slate-700">
-                    <span v-if="g.proyectado !== null" class="text-amber-700 font-semibold">{{ g.proyectado.toLocaleString("es-EC") }}</span>
-                    <span v-else class="text-slate-400">—</span>
-                  </td>
+              <tbody class="divide-y divide-slate-100">
+                <tr v-for="item in indicadores" :key="item.categoria_id">
+                  <td class="px-4 py-3 font-semibold text-slate-900">{{ item.nombre }}</td>
+                  <td class="px-4 py-3 text-slate-600">{{ item.resultados_registrados }}</td>
+                  <td class="px-4 py-3 text-slate-600">{{ formatMetric(item.mejor_tiempo, " s") }}</td>
+                  <td class="px-4 py-3 text-slate-600">{{ formatMetric(item.mejor_puntaje, " pts") }}</td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
+      </section>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-blue-50 to-blue-100 p-5 shadow-sm">
-            <h3 class="text-sm font-semibold text-slate-900">Proyección 2026</h3>
-            <p class="text-3xl font-semibold text-blue-700 mt-2">1,580</p>
-            <p class="text-sm text-slate-600 mt-1">Participantes esperados</p>
-            <p class="text-xs text-emerald-700 mt-2">+26.6% vs 2025</p>
-          </div>
-
-          <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-violet-50 to-violet-100 p-5 shadow-sm">
-            <h3 class="text-sm font-semibold text-slate-900">Proyección 2027</h3>
-            <p class="text-3xl font-semibold text-violet-700 mt-2">1,950</p>
-            <p class="text-sm text-slate-600 mt-1">Participantes esperados</p>
-            <p class="text-xs text-emerald-700 mt-2">+23.4% vs 2026</p>
-          </div>
-
-          <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-amber-50 to-amber-100 p-5 shadow-sm">
-            <h3 class="text-sm font-semibold text-slate-900">Proyección 2028</h3>
-            <p class="text-3xl font-semibold text-amber-700 mt-2">2,380</p>
-            <p class="text-sm text-slate-600 mt-1">Participantes esperados</p>
-            <p class="text-xs text-emerald-700 mt-2">+22.1% vs 2027</p>
-          </div>
-        </div>
-
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 class="text-lg font-semibold text-slate-900">Factores y Recomendaciones</h3>
-
-          <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-              <p class="font-semibold text-emerald-900 mb-2">Factores positivos</p>
-              <ul class="text-sm text-emerald-800 space-y-2">
-                <li>• Incremento de instituciones participantes</li>
-                <li>• Mayor difusión (redes/medios)</li>
-                <li>• Nuevas categorías y formatos</li>
-                <li>• Mejora de infraestructura</li>
-              </ul>
-            </div>
-
-            <div class="rounded-xl border border-blue-200 bg-blue-50 p-4">
-              <p class="font-semibold text-blue-900 mb-2">Recomendaciones</p>
-              <ul class="text-sm text-blue-800 space-y-2">
-                <li>• Expandir alcance a más provincias</li>
-                <li>• Alianzas con empresas tecnológicas</li>
-                <li>• Competencias híbridas/virtuales</li>
-                <li>• Programas de capacitación continua</li>
-              </ul>
+      <section v-else-if="activeTab === 'tendencias'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900">Comparativo anual</h2>
+          <p class="mt-1 text-sm text-slate-500">Evolución de participantes por temporada cerrada.</p>
+          <div v-if="comparativo.length" class="mt-5 flex h-72 items-end gap-3 overflow-x-auto border-b border-slate-200 pb-3">
+            <div v-for="item in comparativo" :key="item.temporada_id" class="flex min-w-[72px] flex-1 flex-col items-center justify-end gap-2">
+              <div class="flex w-full items-end justify-center">
+                <div
+                  class="w-10 rounded-t-xl bg-blue-600"
+                  :style="{ height: `${Math.max(12, (Number(item.participantes) / maxComparativoParticipantes) * 220)}px` }"
+                  :title="`${item.participantes} participantes`"
+                ></div>
+              </div>
+              <p class="text-xs font-bold text-slate-700">{{ item.anio }}</p>
+              <p class="text-xs text-slate-500">{{ formatNumber(item.participantes) }}</p>
             </div>
           </div>
-        </div>
-      </div>
+          <p v-else class="mt-5 rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+            El comparativo anual estará disponible cuando existan cierres oficiales de temporada.
+          </p>
+        </section>
 
-      <!-- Print styles (PDF print) -->
-      <div class="hidden print:block">
-        <p class="text-xs text-slate-500 mt-4">
-          Informe generado desde el módulo “Análisis Histórico y Proyecciones”.
-        </p>
-      </div>
-    </div>
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900">
+            <SparklesIcon class="h-5 w-5 text-blue-600" />
+            Proyección
+          </h2>
+          <div v-if="proyeccion" class="mt-4 space-y-3">
+            <div class="rounded-xl bg-blue-50 p-4">
+              <p class="text-xs font-bold uppercase tracking-wide text-blue-700">Participantes {{ proyeccion.anio }}</p>
+              <p class="mt-1 text-3xl font-black text-blue-800">{{ formatNumber(proyeccion.participantes_estimados) }}</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-xl bg-slate-50 p-3">
+                <p class="text-xs text-slate-500">Equipos</p>
+                <p class="text-xl font-bold text-slate-900">{{ formatNumber(proyeccion.equipos_estimados) }}</p>
+              </div>
+              <div class="rounded-xl bg-slate-50 p-3">
+                <p class="text-xs text-slate-500">Instituciones</p>
+                <p class="text-xl font-bold text-slate-900">{{ formatNumber(proyeccion.instituciones_estimadas) }}</p>
+              </div>
+            </div>
+            <p class="text-xs leading-5 text-slate-500">{{ proyeccion.metodo }}</p>
+          </div>
+          <p v-else class="mt-4 text-sm text-slate-500">Disponible solo para cierres de temporada con histórico previo.</p>
+        </section>
+      </section>
+
+      <section v-else class="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900">Regla del cierre oficial</h2>
+          <p class="mt-2 text-sm leading-6 text-slate-500">
+            El cierre se habilita cuando todas las categorías evaluables tienen sus rondas cerradas. Esta regla evita consolidar resultados incompletos.
+          </p>
+
+          <div class="mt-5">
+            <div class="mb-2 flex justify-between text-xs font-bold text-slate-600">
+              <span>Avance del cierre</span>
+              <span>{{ progresoCierre.porcentaje }}%</span>
+            </div>
+            <div class="h-4 overflow-hidden rounded-full bg-slate-100">
+              <div
+                class="h-full rounded-full"
+                :class="progresoCierre.categorias_pendientes ? 'bg-amber-500' : 'bg-emerald-500'"
+                :style="{ width: `${progresoCierre.porcentaje}%` }"
+              ></div>
+            </div>
+          </div>
+
+          <div class="mt-5 grid gap-3">
+            <div v-for="stat in cierreStats" :key="stat.label" class="flex items-center justify-between rounded-xl p-4" :class="stat.tone">
+              <span class="text-sm font-semibold">{{ stat.label }}</span>
+              <span class="text-2xl font-black">{{ formatNumber(stat.value) }}</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-bold text-slate-900">Categorías pendientes</h2>
+          <div v-if="progresoCierre.pendientes?.length" class="mt-4 space-y-3">
+            <div
+              v-for="categoria in progresoCierre.pendientes"
+              :key="categoria.categoria_id"
+              class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-900"
+            >
+              <div class="flex items-start gap-3">
+                <ExclamationTriangleIcon class="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p class="font-bold">{{ categoria.nombre }}</p>
+                  <p class="mt-1 text-sm">
+                    {{
+                      categoria.rondas_pendientes?.length
+                        ? `Rondas pendientes: ${categoria.rondas_pendientes.map((ronda) => ronda.nombre).join(", ")}.`
+                        : "Tiene resultados o rondas pendientes por cerrar."
+                    }}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+            <div class="flex items-start gap-3">
+              <CheckCircleIcon class="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p class="font-bold">Todo listo para el cierre</p>
+                <p class="mt-1 text-sm">No existen categorías pendientes para esta selección.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </template>
   </div>
 </template>
-
-<style>
-/* Export PDF (print) */
-@media print {
-  body {
-    background: white !important;
-  }
-  #export-btn,
-  #export-menu {
-    display: none !important;
-  }
-}
-</style>

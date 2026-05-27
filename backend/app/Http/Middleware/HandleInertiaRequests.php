@@ -57,6 +57,28 @@ class HandleInertiaRequests extends Middleware
 
             'loginError' => fn () => $request->session()->get('loginError'),
 
+            'adminNotificaciones' => fn () => $request->user()
+                ? [
+                    'recibidas' => DB::table('comunicacion.notificaciones')
+                        ->where('user_id', $request->user()->id)
+                        ->count(),
+                    'noLeidas' => DB::table('comunicacion.notificaciones')
+                        ->where('user_id', $request->user()->id)
+                        ->where('leido', false)
+                        ->count(),
+                ]
+                : [
+                    'recibidas' => 0,
+                    'noLeidas' => 0,
+                ],
+
+            'notificacionesNoLeidas' => fn () => $request->user()
+                ? DB::table('comunicacion.notificaciones')
+                    ->where('user_id', $request->user()->id)
+                    ->where('leido', false)
+                    ->count()
+                : 0,
+
             'flash.success' => fn () => $request->session()->get('success'),
             'flash.error' => fn () => $request->session()->get('error'),
         ]);

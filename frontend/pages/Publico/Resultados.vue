@@ -17,18 +17,14 @@ const vista = computed(() => page.props.vista ?? { scope: null, summary: null, r
 
 const selectedCompetition = ref(competenciaId.value ?? "");
 const selectedCategoryId = ref(vista.value.scope?.categoria_id ?? categorias.value[0]?.id ?? null);
-const selectedRondaId = ref(vista.value.scope?.ronda_id ?? categorias.value[0]?.rondas?.[0]?.id ?? null);
 
 const selectedCategory = computed(() => {
   return categorias.value.find((item) => Number(item.id) === Number(selectedCategoryId.value)) ?? null;
 });
 
-const rondasDisponibles = computed(() => selectedCategory.value?.rondas ?? []);
-
 function syncSelection() {
   selectedCompetition.value = competenciaId.value ?? "";
   selectedCategoryId.value = vista.value.scope?.categoria_id ?? categorias.value[0]?.id ?? null;
-  selectedRondaId.value = vista.value.scope?.ronda_id ?? selectedCategory.value?.rondas?.[0]?.id ?? null;
 }
 
 function applyFilters() {
@@ -36,7 +32,6 @@ function applyFilters() {
 
   if (Number(selectedCompetition.value) > 0) params.competencia_id = Number(selectedCompetition.value);
   if (Number(selectedCategoryId.value) > 0) params.categoria_id = Number(selectedCategoryId.value);
-  if (Number(selectedRondaId.value) > 0) params.ronda_id = Number(selectedRondaId.value);
 
   router.get("/resultados", params, {
     replace: true,
@@ -57,23 +52,23 @@ function formatUpdatedAt(value) {
   });
 }
 
+function publishedResultLabel(row) {
+  if (!vista.value.scope?.promediar_jueces) {
+    return row.resultado_label;
+  }
+
+  const rawValue = row.resultado_valor ?? String(row.resultado_label ?? "").match(/-?\d+(?:\.\d+)?/)?.[0] ?? 0;
+  const value = Number(rawValue);
+
+  return `Promedio ${value.toFixed(2)}`;
+}
+
 watch(
-  () => [competenciaId.value, categorias.value, vista.value.scope?.categoria_id, vista.value.scope?.ronda_id],
+  () => [competenciaId.value, categorias.value, vista.value.scope?.categoria_id],
   () => {
     syncSelection();
   },
   { immediate: true }
-);
-
-watch(
-  () => selectedCategoryId.value,
-  () => {
-    const firstRondaId = selectedCategory.value?.rondas?.[0]?.id ?? null;
-    const exists = (selectedCategory.value?.rondas ?? []).some(
-      (item) => Number(item.id) === Number(selectedRondaId.value)
-    );
-    if (!exists) selectedRondaId.value = firstRondaId;
-  }
 );
 </script>
 
@@ -82,16 +77,16 @@ watch(
     <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-8 sm:px-6 lg:px-4">
       <div class="flex flex-col gap-4 rounded-3xl bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500 px-6 py-8 text-white shadow-lg md:flex-row md:items-end md:justify-between">
         <div>
-          <p class="text-sm uppercase tracking-[0.2em] text-white/80">Club de Robotica ESPOCH</p>
+          <p class="text-sm uppercase tracking-[0.2em] text-white/80">Club de Robótica ESPOCH</p>
           <h1 class="mt-2 text-3xl font-bold leading-tight">Resultados Publicados</h1>
           <p class="mt-2 text-sm text-white/85">
-            Consulta clasificaciones oficiales publicadas por competencia, categoria y ronda.
+            Consulta el podio oficial publicado por competencia y categoría.
           </p>
         </div>
 
         <Link
           href="/"
-          class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+          class="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-white/35 transition hover:bg-white/25"
         >
           <EyeIcon class="h-5 w-5" />
           Volver al inicio
@@ -99,7 +94,7 @@ watch(
       </div>
 
       <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div>
             <label class="mb-1 block text-sm font-medium text-slate-700">Competencia</label>
             <select
@@ -114,26 +109,13 @@ watch(
           </div>
 
           <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">Categoria</label>
+            <label class="mb-1 block text-sm font-medium text-slate-700">Categoría</label>
             <select
               v-model="selectedCategoryId"
               class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option disabled :value="null">Seleccionar categoria</option>
+              <option disabled :value="null">Seleccionar categoría</option>
               <option v-for="item in categorias" :key="item.id" :value="item.id">
-                {{ item.nombre }}
-              </option>
-            </select>
-          </div>
-
-          <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">Ronda</label>
-            <select
-              v-model="selectedRondaId"
-              class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option disabled :value="null">Seleccionar ronda</option>
-              <option v-for="item in rondasDisponibles" :key="item.id" :value="item.id">
                 {{ item.nombre }}
               </option>
             </select>
@@ -146,7 +128,7 @@ watch(
               class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-white transition hover:bg-slate-800"
             >
               <CheckBadgeIcon class="h-5 w-5" />
-              Ver resultados
+              Actualizar resultados
             </button>
           </div>
         </div>
@@ -159,13 +141,13 @@ watch(
         {{ vista.error }}
       </div>
 
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="rounded-3xl border border-blue-200 bg-blue-50 p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-sm font-semibold text-blue-700">Categoria</p>
+              <p class="text-sm font-semibold text-blue-700">Categoría</p>
               <p class="mt-3 text-xl font-bold text-blue-900">
-                {{ vista.scope?.categoria_nombre || "Sin seleccion" }}
+                {{ vista.scope?.categoria_nombre || "Sin selección" }}
               </p>
             </div>
             <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100">
@@ -174,24 +156,10 @@ watch(
           </div>
         </div>
 
-        <div class="rounded-3xl border border-emerald-200 bg-emerald-50 p-5">
-          <div class="flex items-start justify-between gap-4">
-            <div>
-              <p class="text-sm font-semibold text-emerald-700">Ronda</p>
-              <p class="mt-3 text-xl font-bold text-emerald-900">
-                {{ vista.scope?.ronda_nombre || "Sin seleccion" }}
-              </p>
-            </div>
-            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100">
-              <CheckBadgeIcon class="h-7 w-7 text-emerald-700" />
-            </div>
-          </div>
-        </div>
-
         <div class="rounded-3xl border border-slate-200 bg-white p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-sm font-semibold text-slate-700">Ultima publicacion</p>
+              <p class="text-sm font-semibold text-slate-700">Última publicación</p>
               <p class="mt-3 text-base font-bold text-slate-900">
                 {{ formatUpdatedAt(vista.summary?.updated_at) }}
               </p>
@@ -209,7 +177,7 @@ watch(
             {{ competencias.find((item) => Number(item.id) === Number(selectedCompetition))?.nombre || "Resultados" }}
           </h2>
           <p class="mt-1 text-sm text-slate-500">
-            Clasificacion oficial - {{ vista.scope?.mecanismo_nombre || "Publicada" }}
+            Podio oficial - {{ vista.scope?.mecanismo_nombre || "Publicada" }}
           </p>
         </div>
 
@@ -217,11 +185,10 @@ watch(
           <table class="min-w-full text-sm">
             <thead class="bg-white">
               <tr class="border-b border-slate-200 text-left text-black">
-                <th class="w-[110px] px-6 py-4 font-medium">Posicion</th>
+                <th class="w-[110px] px-6 py-4 font-medium">Posición</th>
                 <th class="px-6 py-4 font-medium">Equipo</th>
-                <th class="px-6 py-4 font-medium">Institucion</th>
+                <th class="px-6 py-4 font-medium">Institución</th>
                 <th class="px-6 py-4 font-medium">Resultado</th>
-                <th class="px-6 py-4 font-medium">Puntaje</th>
               </tr>
             </thead>
 
@@ -236,21 +203,24 @@ watch(
                 </td>
                 <td class="px-6 py-4">
                   <p class="font-medium text-slate-900">{{ row.equipo_nombre }}</p>
+                  <p v-if="row.nota" class="mt-1 text-xs font-semibold text-amber-700">
+                    {{ row.nota }}
+                  </p>
                 </td>
                 <td class="px-6 py-4 text-slate-600">{{ row.institucion || "Sin institucion" }}</td>
-                <td class="px-6 py-4 text-slate-900">{{ row.resultado_label }}</td>
-                <td class="px-6 py-4 text-slate-700">{{ row.puntaje_total ?? "-" }}</td>
+                <td class="px-6 py-4 text-slate-900">{{ publishedResultLabel(row) }}</td>
               </tr>
 
               <tr v-if="!vista.rows?.length">
-                <td colspan="5" class="px-6 py-10 text-center text-slate-500">
-                  No hay resultados publicados para los filtros seleccionados.
+                <td colspan="4" class="px-6 py-10 text-center text-slate-500">
+                  No hay podio publicado para los filtros seleccionados.
                 </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+
     </div>
   </div>
 </template>

@@ -3,9 +3,9 @@
 namespace App\Modules\Admin\AsignacionJueces\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\EnviarCorreoActivacionJuezJob;
 use App\Models\User;
 use App\Modules\Admin\AsignacionJueces\Requests\StoreJuezRequest;
-use App\Services\BrevoMailService;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -18,7 +18,7 @@ use Throwable;
 
 class JuezController extends Controller
 {
-    public function store(StoreJuezRequest $request, BrevoMailService $brevoMailService): RedirectResponse|JsonResponse
+    public function store(StoreJuezRequest $request): RedirectResponse|JsonResponse
     {
         $data = $request->validated();
 
@@ -51,7 +51,7 @@ class JuezController extends Controller
             });
 
             $activationUrl = $this->generarEnlaceActivacion($juez);
-            $this->enviarCorreoActivacion($brevoMailService, $juez, $activationUrl);
+            EnviarCorreoActivacionJuezJob::dispatch((int) $juez->id, $activationUrl)->afterCommit();
         } catch (QueryException $exception) {
             Log::warning('Conflicto al crear juez desde Asignacion de Jueces.', [
                 'email' => $data['email'] ?? null,
@@ -76,7 +76,7 @@ class JuezController extends Controller
         }
 
         $payload = [
-            'success' => 'Juez creado correctamente y correo de activacion enviado.',
+            'success' => 'Juez creado correctamente y correo de activación encolado.',
             'created_juez_id' => $juez->id,
             'activation_url' => app()->isLocal() ? $activationUrl : null,
         ];
@@ -92,7 +92,7 @@ class JuezController extends Controller
         return back()->with($payload);
     }
 
-    public function resendActivation(Request $request, int $juezId, BrevoMailService $brevoMailService): RedirectResponse|JsonResponse
+    public function resendActivation(Request $request, int $juezId): RedirectResponse|JsonResponse
     {
         $rolJuezId = DB::table('seguridad.roles')
             ->where('nombre', 'juez')
@@ -111,7 +111,7 @@ class JuezController extends Controller
 
         try {
             $activationUrl = $this->generarEnlaceActivacion($juez);
-            $this->enviarCorreoActivacion($brevoMailService, $juez, $activationUrl);
+            EnviarCorreoActivacionJuezJob::dispatch((int) $juez->id, $activationUrl)->afterCommit();
         } catch (Throwable $exception) {
             Log::error('No se pudo reenviar enlace de activacion de juez.', [
                 'juez_id' => $juez->id,
@@ -120,12 +120,12 @@ class JuezController extends Controller
             ]);
 
             return $this->validationResponse($request, [
-                'general' => 'No se pudo reenviar el enlace de activacion.',
+                'general' => 'No se pudo reenviar el enlace de activación.',
             ]);
         }
 
         $payload = [
-            'success' => 'Enlace de activacion reenviado correctamente.',
+            'success' => 'Enlace de activación encolado correctamente.',
             'activation_url' => app()->isLocal() ? $activationUrl : null,
         ];
 
@@ -188,25 +188,6 @@ class JuezController extends Controller
         ]);
 
         return route('activation.show', ['token' => $token]);
-    }
-
-    private function enviarCorreoActivacion(BrevoMailService $brevoMailService, User $juez, string $activationUrl): void
-    {
-        $html = "
-            <h2>Activacion de cuenta</h2>
-            <p>Hola {$juez->name} {$juez->last_name},</p>
-            <p>Se ha creado tu cuenta como juez en el sistema del Club de Robotica ESPOCH.</p>
-            <p>Para activar tu cuenta y definir tu contrasena, haz clic en el siguiente enlace:</p>
-            <p><a href='{$activationUrl}' target='_blank'>Activar cuenta</a></p>
-            <p>Este enlace caduca en 24 horas.</p>
-        ";
-
-        $brevoMailService->sendEmail(
-            $juez->email,
-            $juez->name . ' ' . $juez->last_name,
-            'Activa tu cuenta - Club de Robotica ESPOCH',
-            $html
-        );
     }
 
     private function validationResponse(Request $request, array $messages): RedirectResponse|JsonResponse

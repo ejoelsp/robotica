@@ -1,19 +1,19 @@
 <script setup>
 import axios from "axios";
-import { computed, onMounted, reactive, ref, watch } from "vue";
+import { usePage } from "@inertiajs/vue3";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 
 import {
   EyeIcon,
-  TrophyIcon,
   CheckCircleIcon,
+  ClockIcon,
   XMarkIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   ClipboardDocumentListIcon,
   Squares2X2Icon,
-  ClockIcon,
-  InformationCircleIcon,
   SparklesIcon,
+  TrophyIcon,
 } from "@heroicons/vue/24/outline";
 
 const props = defineProps({
@@ -28,6 +28,7 @@ const props = defineProps({
 });
 
 const isRemoteMode = computed(() => props.mode === "remote");
+const page = usePage();
 const catScroller = ref(null);
 
 const mockSelectedCompetition = ref(
@@ -37,15 +38,43 @@ const mockSelectedCategoryId = ref(props.categories?.[0]?.id ?? null);
 
 const remoteLoading = ref(false);
 const remoteSaving = ref(false);
+const remoteEndingMatch = ref(false);
 const remoteDrawGenerating = ref(false);
 const remoteNotice = ref({ type: "", message: "" });
+const toast = ref({ show: false, type: "info", message: "" });
+let toastTimer = null;
+let remoteSyncTimer = null;
+let remoteLockHeartbeatTimer = null;
 const remoteContext = ref(null);
 const remoteFormDefinition = ref(null);
 const remoteErrors = ref({});
+const remoteCategoryLock = ref({ activo: false, bloqueado: false });
 const remoteSelectedCategoryId = ref(null);
 const remoteSelectedRondaId = ref(null);
 const remoteSelectedTeamId = ref("");
+const remoteSelectedAttemptNumber = ref(1);
 const timeInputDigits = ref("");
+const invalidTimeModalOpen = ref(false);
+const invalidTimeReason = ref("No completa el circuito");
+const invalidTimeOtherReason = ref("");
+const nextAttemptModalOpen = ref(false);
+const completedAttemptNumber = ref(1);
+const nextAttemptNumber = ref(2);
+const roundCompletionModal = ref({
+  show: false,
+  isFinal: false,
+  title: "",
+  message: "",
+});
+
+const invalidTimeReasons = [
+  "No participa",
+  "No completa el circuito",
+  "Abandona",
+  "No genera tiempo",
+  "Intento inválido",
+  "Otro",
+];
 
 const mockNotice = ref({ type: "", message: "" });
 const mockErrors = ref({});
@@ -59,9 +88,17 @@ const mockForm = reactive({
 const remoteForm = reactive({
   observaciones: "",
   motivo_cambio: "",
+  motivo_cambio_opcion: "",
+  motivo_cambio_otro: "",
   version: 0,
   payload: {},
 });
+
+const changeReasonOptions = [
+  "Error de digitación en el resultado",
+  "Corrección por reclamo aprobado",
+  "Otro",
+];
 
 const mockTeams = [
   { id: "1", nombre: "ESPOCH Team A" },
@@ -163,34 +200,250 @@ const remoteTeams = computed(() => remoteContext.value?.equipos ?? []);
 
 const currentSorteo = computed(() => remoteContext.value?.sorteo ?? null);
 
+const currentRemoteRound = computed(() => {
+  return remoteRounds.value.find(
+    (round) => Number(round.id) === Number(remoteSelectedRondaId.value)
+  ) ?? remoteFormDefinition.value?.ronda ?? null;
+});
+
 const hasCurrentSorteo = computed(() => !isRemoteMode.value || !!currentSorteo.value);
 
 const pendingRemoteTeams = computed(() => {
   if (!isRemoteMode.value) return [];
 
-  return remoteTeams.value.filter((team) => !team.resultado_id);
+  return remoteTeams.value.filter((team) => !remoteTeamEvaluationComplete(team) && team.sorteo_estado !== "completado");
 });
+
+const currentPendingRemoteTeam = computed(() => pendingRemoteTeams.value[0] ?? null);
 
 const currentRemoteTeam = computed(() => {
   if (!isRemoteMode.value) return null;
 
   return remoteTeams.value.find(
     (team) => String(team.equipo_id) === String(remoteSelectedTeamId.value)
+      && Number(team.intento_numero ?? 1) === Number(remoteSelectedAttemptNumber.value || 1)
   ) ?? null;
+});
+
+const currentRemoteTurnLabel = computed(() => {
+  if (!currentRemoteTeam.value) return "";
+
+  if (isEnfrentamientoSorteo.value) {
+    return `Combate #${currentRemoteTeam.value.sorteo_grupo || currentRemoteTeam.value.sorteo_orden || "actual"}`;
+  }
+
+  const orden = currentRemoteTeam.value.sorteo_orden ? `#${currentRemoteTeam.value.sorteo_orden}` : "actual";
+  const intento = currentRemoteTeam.value.intento_label || `Intento ${currentRemoteTeam.value.intento_numero || 1}`;
+
+  return `Participante ${orden} - ${intento}`;
 });
 
 const completedRemoteTeamsCount = computed(() => {
   if (!isRemoteMode.value) return 0;
 
-  return remoteTeams.value.filter((team) => !!team.resultado_id).length;
+  return remoteTeams.value.filter((team) => remoteTeamEvaluationComplete(team)).length;
+});
+
+const currentRoundHasRemoteResults = computed(() => {
+  return isRemoteMode.value && remoteTeams.value.some((team) => !!team.resultado_id);
+});
+
+const isRemoteMultiJudge = computed(() => {
+  return remoteFormDefinition.value?.config_calificacion?.esquema_jueces === "evaluacion_multi_juez"
+    || selectedCategory.value?.config_calificacion?.esquema_jueces === "evaluacion_multi_juez";
+});
+
+const remoteCategoryLockedByOther = computed(() => {
+  return isRemoteMode.value && Boolean(remoteCategoryLock.value?.bloqueado);
+});
+
+const remoteCategoryLockMessage = computed(() => {
+  if (!remoteCategoryLockedByOther.value) return "";
+
+  if (remoteCategoryLock.value?.message) {
+    return remoteCategoryLock.value.message;
+  }
+
+  const judgeName = remoteCategoryLock.value?.juez_nombre || "otro juez";
+  return `Esta categoría está siendo registrada por ${judgeName}.`;
+});
+
+const canUseRemoteRegistration = computed(() => {
+  return !isRemoteMode.value || !remoteCategoryLockedByOther.value;
+});
+
+function remoteTeamEvaluationComplete(team) {
+  if (!team) return false;
+  if (team.evaluacion_completa !== undefined) return Boolean(team.evaluacion_completa);
+
+  return !!team.resultado_id;
+}
+
+function currentSaveWillCompleteEvaluation() {
+  const team = currentRemoteTeam.value;
+  if (!team) return false;
+  if (remoteTeamEvaluationComplete(team)) return true;
+
+  const required = Math.max(1, Number(team.evaluaciones_requeridas ?? 1));
+  const registered = Math.max(0, Number(team.evaluaciones_registradas ?? (team.resultado_id ? 1 : 0)));
+  const currentJudgeAlreadyRegistered = Boolean(team.resultado_id);
+
+  return registered + (currentJudgeAlreadyRegistered ? 0 : 1) >= required;
+}
+
+function remoteTeamKey(item) {
+  return `${String(item?.equipo_id ?? "")}:${Number(item?.intento_numero ?? 1)}`;
+}
+
+function findRemoteTeamByKey(item) {
+  if (!item?.equipo_id) return null;
+
+  return remoteTeams.value.find(
+    (team) => String(team.equipo_id) === String(item.equipo_id)
+      && Number(team.intento_numero ?? 1) === Number(item.intento_numero ?? 1)
+  ) ?? null;
+}
+
+function queueItemForSelection(item) {
+  return findRemoteTeamByKey(item) ?? item;
+}
+
+function isCurrentQueueTurn(item) {
+  const queueItem = queueItemForSelection(item);
+
+  if (!queueItem?.equipo_id || !currentPendingRemoteTeam.value) return false;
+
+  return remoteTeamKey(queueItem) === remoteTeamKey(currentPendingRemoteTeam.value);
+}
+
+function isSelectableQueueItem(item) {
+  const queueItem = queueItemForSelection(item);
+
+  return remoteTeamEvaluationComplete(queueItem) || isCurrentQueueTurn(queueItem);
+}
+
+function isSelectableMatchGroup(group) {
+  return (group?.items ?? []).some((item) => isSelectableQueueItem(item));
+}
+
+function queueItemStatusLabel(item) {
+  if (isSelectableQueueItem(item)) return "";
+  return "Debes registrar el participante actual según el orden del sorteo antes de avanzar.";
+}
+
+const canGenerateRemoteDraw = computed(() => {
+  return isRemoteMode.value
+    && !!remoteSelectedRondaId.value
+    && canUseRemoteRegistration.value
+    && (!currentSorteo.value || !currentRoundHasRemoteResults.value);
+});
+
+const remoteDrawButtonLabel = computed(() => {
+  if (remoteDrawGenerating.value) return "Generando...";
+  if (!currentSorteo.value) return "Generar sorteo";
+  if (currentRoundHasRemoteResults.value) return "Sorteo generado";
+  return "Generar nuevamente";
+});
+
+const canFinishCurrentMatch = computed(() => {
+  return isRemoteMode.value
+    && canUseRemoteRegistration.value
+    && isEnfrentamientoSorteo.value
+    && !!remoteSelectedTeamId.value
+    && currentVersion.value > 0
+    && !currentMatchHasUnsavedChanges.value
+    && currentRemoteTeam.value?.sorteo_estado !== "completado";
+});
+
+const currentMatchHasUnsavedChanges = computed(() => {
+  if (!isRemoteMode.value || !isEnfrentamientoSorteo.value || currentVersion.value <= 0) {
+    return false;
+  }
+
+  return comparablePayload(normalizeRemotePayload()) !== comparablePayload(remoteFormDefinition.value?.resultado_actual?.payload ?? {});
+});
+
+const currentRemoteHasUnsavedChanges = computed(() => {
+  if (!isRemoteMode.value || currentVersion.value <= 0 || !remoteFormDefinition.value?.resultado_actual) {
+    return false;
+  }
+
+  return comparablePayload(normalizeRemotePayload()) !== comparablePayload(remoteFormDefinition.value?.resultado_actual?.payload ?? {});
+});
+
+const shouldShowFinishCurrentMatch = computed(() => {
+  return isRemoteMode.value
+    && isEnfrentamientoSorteo.value
+    && !!remoteSelectedTeamId.value
+    && currentRemoteTeam.value?.sorteo_estado !== "completado";
+});
+
+const finishCurrentMatchHint = computed(() => {
+  if (!shouldShowFinishCurrentMatch.value || canFinishCurrentMatch.value) {
+    return "";
+  }
+
+  return "Guarda el marcador antes de terminar el encuentro.";
 });
 
 const currentSorteoLabel = computed(() => {
   if (!currentSorteo.value) return "Sorteo pendiente";
   return currentSorteo.value.tipo_sorteo === "enfrentamiento"
     ? "Llaves de enfrentamiento"
-    : "Orden de participacion";
+    : "Orden de participación";
 });
+
+const remoteRegisteredTeamsCount = computed(() => {
+  return Number(selectedCategory.value?.categoria?.equipos_inscritos_count ?? remoteTeams.value.length ?? 0);
+});
+
+const remoteTeamsCountLabel = computed(() => {
+  const count = remoteRegisteredTeamsCount.value;
+  return `${count} ${count === 1 ? "equipo inscrito" : "equipos inscritos"}`;
+});
+
+function normalizeTextForCompare(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanParticipantName(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  const categoryName = selectedCategory.value?.categoria?.nombre ?? selectedCategory.value?.nombre ?? "";
+  const normalizedCategory = normalizeTextForCompare(categoryName);
+
+  if (!normalizedCategory) {
+    return raw;
+  }
+
+  const pieces = raw
+    .split(/\s+-\s+/)
+    .map((piece) => piece.trim())
+    .filter(Boolean);
+
+  const withoutCategoryPieces = pieces.filter((piece) => normalizeTextForCompare(piece) !== normalizedCategory);
+
+  if (withoutCategoryPieces.length && withoutCategoryPieces.length !== pieces.length) {
+    return withoutCategoryPieces.join(" - ");
+  }
+
+  const normalizedRaw = normalizeTextForCompare(raw);
+  if (normalizedRaw.endsWith(` - ${normalizedCategory}`)) {
+    return raw.slice(0, raw.length - categoryName.length).replace(/\s+-\s*$/, "").trim();
+  }
+
+  return raw;
+}
+
+function participantName(item, fallback = "Sin participante") {
+  return cleanParticipantName(item?.nombre_prototipo || item?.equipo_nombre) || fallback;
+}
 
 const sorteoGroups = computed(() => {
   const detalles = currentSorteo.value?.detalles ?? [];
@@ -200,13 +453,63 @@ const sorteoGroups = computed(() => {
   }
 
   return Object.values(
-    detalles.reduce((acc, detalle) => {
+    detalles.filter((detalle) => detalle.estado !== "directo").reduce((acc, detalle) => {
       const key = detalle.grupo ?? detalle.orden;
       acc[key] ??= { grupo: key, items: [] };
       acc[key].items.push(detalle);
       return acc;
     }, {})
   ).sort((a, b) => Number(a.grupo) - Number(b.grupo));
+});
+
+const sorteoDirectItems = computed(() => {
+  const detalles = currentSorteo.value?.detalles ?? [];
+
+  if (currentSorteo.value?.tipo_sorteo !== "enfrentamiento") {
+    return [];
+  }
+
+  return detalles
+    .filter((detalle) => detalle.estado === "directo")
+    .sort((a, b) => Number(a.orden ?? 0) - Number(b.orden ?? 0));
+});
+
+const sorteoOrdenItems = computed(() => {
+  if (!isRemoteMode.value) return [];
+
+  const detalles = currentSorteo.value?.detalles ?? [];
+
+  if (detalles.length && currentSorteo.value?.tipo_sorteo === "enfrentamiento") {
+    return [...detalles]
+      .sort((a, b) => Number(a.orden ?? 0) - Number(b.orden ?? 0))
+      .map((detalle) => ({
+        orden: detalle.orden,
+        equipo_id: detalle.equipo_id,
+        intento_numero: 1,
+        intento_label: "Intento 1",
+        participante: participantName(detalle),
+        institucion: detalle.institucion || "Sin institucion",
+      }));
+  }
+
+  return [...remoteTeams.value]
+    .sort((a, b) => Number(a.flujo_orden ?? a.sorteo_orden ?? a.inscripcion_id ?? 0) - Number(b.flujo_orden ?? b.sorteo_orden ?? b.inscripcion_id ?? 0))
+    .map((team, index) => ({
+      orden: team.sorteo_orden ?? index + 1,
+      equipo_id: team.equipo_id,
+      intento_numero: team.intento_numero ?? 1,
+      intento_label: team.intento_label ?? `Intento ${team.intento_numero ?? 1}`,
+      participante: participantName(team),
+      institucion: team.institucion || "Sin institucion",
+      resultado_id: team.resultado_id ?? null,
+      resultado_estado: team.resultado_estado ?? null,
+      resultado_juez_nombre: team.resultado_juez_nombre ?? "",
+      resultado_registrado_por_otro_juez: Boolean(team.resultado_registrado_por_otro_juez),
+      evaluacion_completa: remoteTeamEvaluationComplete(team),
+      evaluaciones_pendientes: Number(team.evaluaciones_pendientes ?? 0),
+      is_current_turn: isCurrentQueueTurn(team),
+      is_selectable: isSelectableQueueItem(team),
+    }));
 });
 
 const mockAvailableSubcats = computed(() => selectedCategory.value?.sub ?? []);
@@ -239,23 +542,30 @@ const currentFields = computed(() => {
 });
 
 const isRubricFormat = computed(() => {
-  return isRemoteMode.value && ["tabla_evaluacion", "puntaje_jueces"].includes(remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo);
+  const template = remoteFormDefinition.value?.config_calificacion?.plantilla_resultado;
+
+  return isRemoteMode.value
+    && (["tabla_individual_criterios", "tabla_individual_puntaje_maximo", "tabla_enfrentamiento_criterios"].includes(template)
+      || ["tabla_evaluacion", "puntaje_jueces"].includes(remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo));
 });
 
 const isTablaEnfrentamientoTemplate = computed(() => {
   return isRemoteMode.value
-    && remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo === "tabla_evaluacion"
     && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "tabla_enfrentamiento_criterios";
 });
 
 const isTablaIndividualTemplate = computed(() => {
   return isRemoteMode.value
-    && remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo === "tabla_evaluacion"
     && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "tabla_individual_criterios";
 });
 
+const isTablaPuntajeMaximoTemplate = computed(() => {
+  return isRemoteMode.value
+    && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "tabla_individual_puntaje_maximo";
+});
+
 const rubricFields = computed(() => {
-  if (!isRubricFormat.value || isTablaEnfrentamientoTemplate.value || isTablaIndividualTemplate.value) return [];
+  if (!isRubricFormat.value || isTablaEnfrentamientoTemplate.value || isTablaIndividualTemplate.value || isTablaPuntajeMaximoTemplate.value) return [];
 
   return currentFields.value.filter((field) => field.type === "number" && field.key !== "penalizaciones");
 });
@@ -267,13 +577,13 @@ const fightCriterionFields = computed(() => {
 });
 
 const individualCriterionFields = computed(() => {
-  if (!isTablaIndividualTemplate.value) return [];
+  if (!isTablaIndividualTemplate.value && !isTablaPuntajeMaximoTemplate.value) return [];
 
   return currentFields.value.filter((field) => field.type === "number" && field.key !== "penalizaciones");
 });
 
 const standardFields = computed(() => {
-  if (isTablaEnfrentamientoTemplate.value || isTablaIndividualTemplate.value) {
+  if (isTablaEnfrentamientoTemplate.value || isTablaIndividualTemplate.value || isTablaPuntajeMaximoTemplate.value) {
     return currentFields.value.filter((field) => field.key === "observaciones" || field.type !== "number");
   }
 
@@ -281,12 +591,12 @@ const standardFields = computed(() => {
     ? currentFields.value.filter((field) => !rubricFields.value.some((rubric) => rubric.key === field.key))
     : currentFields.value;
 
-  if (isGolesTemplate.value) {
-    return fields.filter((field) => !["goles_favor", "goles_contra"].includes(field.key));
+  if (isMarcadorTemplate.value) {
+    return fields.filter((field) => !["marcador_equipo_a", "marcador_equipo_b"].includes(field.key));
   }
 
   if (isTiempoTemplate.value) {
-    return fields.filter((field) => field.key !== "tiempo");
+    return fields.filter((field) => !["tiempo", "penalizaciones", "valor_principal", "resultado"].includes(field.key));
   }
 
   return fields;
@@ -337,15 +647,13 @@ const hasRemoteObservacionesField = computed(() => {
   return currentFields.value.some((field) => field.key === "observaciones");
 });
 
-const isGolesTemplate = computed(() => {
+const isMarcadorTemplate = computed(() => {
   return isRemoteMode.value
-    && remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo === "registro_resultado"
-    && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "goles";
+    && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "marcador";
 });
 
 const isTiempoTemplate = computed(() => {
   return isRemoteMode.value
-    && remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo === "registro_resultado"
     && remoteFormDefinition.value?.config_calificacion?.plantilla_resultado === "tiempo";
 });
 
@@ -363,9 +671,10 @@ function durationDigitsFromValue(value) {
   if (value === null || value === undefined || value === "") return "";
 
   const raw = String(value).trim();
+  const normalizedNumber = raw.replace(",", ".");
 
-  if (/^\d+$/.test(raw)) {
-    const seconds = Number(raw);
+  if (/^\d+(?:\.\d+)?$/.test(normalizedNumber)) {
+    const seconds = Number(normalizedNumber);
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const rest = Math.floor(seconds % 60);
@@ -390,11 +699,48 @@ function digitsToDuration(digits) {
   return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:${padded.slice(4, 6)}`;
 }
 
+function durationValueToSeconds(value) {
+  if (value === null || value === undefined || value === "") return null;
+
+  const raw = String(value).trim().replace(",", ".");
+
+  if (/^\d+(?:\.\d+)?$/.test(raw)) {
+    return Number(raw);
+  }
+
+  const parts = raw.split(":").map((part) => Number(part));
+
+  if (parts.length === 3 && parts.every(Number.isFinite)) {
+    return (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+  }
+
+  if (parts.length === 2 && parts.every(Number.isFinite)) {
+    return (parts[0] * 60) + parts[1];
+  }
+
+  return null;
+}
+
+function formatDurationValue(value) {
+  const secondsValue = durationValueToSeconds(value);
+
+  if (secondsValue === null) return "00:00:00";
+
+  const totalSeconds = Math.max(0, Math.floor(secondsValue));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 function onTimeDigitsInput(event) {
   const digits = String(event.target.value || "").replace(/\D/g, "").slice(-6).replace(/^0+(?=\d)/, "");
   event.target.value = digits;
   timeInputDigits.value = digits;
   currentFieldValues.value.tiempo = digits ? digitsToDuration(digits) : "";
+  currentFieldValues.value.no_participa = false;
+  currentFieldValues.value.sin_tiempo_valido = false;
 }
 
 function blockNonNumericInput(event) {
@@ -409,6 +755,31 @@ function onTimeDigitsPaste(event) {
   const digits = text.replace(/\D/g, "").slice(-6).replace(/^0+(?=\d)/, "");
   timeInputDigits.value = digits;
   currentFieldValues.value.tiempo = digits ? digitsToDuration(digits) : "";
+  currentFieldValues.value.no_participa = false;
+  currentFieldValues.value.sin_tiempo_valido = false;
+}
+
+function durationDisplayParts(value) {
+  const padded = durationDigitsFromValue(value).replace(/\D/g, "").slice(-6).padStart(6, "0");
+
+  return {
+    hours: padded.slice(0, 2),
+    minutes: padded.slice(2, 4),
+    seconds: padded.slice(4, 6),
+  };
+}
+
+function onDurationDigitsInput(event, key) {
+  const digits = String(event.target.value || "").replace(/\D/g, "").slice(-6).replace(/^0+(?=\d)/, "");
+  event.target.value = digits;
+  currentFieldValues.value[key] = digits ? digitsToDuration(digits) : "";
+}
+
+function onDurationDigitsPaste(event, key) {
+  event.preventDefault();
+  const text = event.clipboardData?.getData("text") ?? "";
+  const digits = text.replace(/\D/g, "").slice(-6).replace(/^0+(?=\d)/, "");
+  currentFieldValues.value[key] = digits ? digitsToDuration(digits) : "";
 }
 
 const currentMatchItems = computed(() => {
@@ -419,10 +790,18 @@ const currentMatchItems = computed(() => {
   );
 
   return (group?.items ?? []).slice().sort((left, right) => {
-    const order = { A: 1, B: 2, BYE: 3 };
+    const order = { A: 1, B: 2 };
     return (order[left.lado] ?? 9) - (order[right.lado] ?? 9);
   });
 });
+
+const isEnfrentamientoSorteo = computed(() => currentSorteo.value?.tipo_sorteo === "enfrentamiento");
+
+function isCurrentMatchGroup(group) {
+  if (!isEnfrentamientoSorteo.value || !currentRemoteTeam.value) return false;
+
+  return Number(group?.grupo) === Number(currentRemoteTeam.value.sorteo_grupo);
+}
 
 const scoreboardTeamA = computed(() => {
   return currentMatchItems.value.find((item) => item.lado === "A") ?? currentMatchItems.value[0] ?? currentRemoteTeam.value;
@@ -433,8 +812,23 @@ const scoreboardTeamB = computed(() => {
 });
 
 function scoreFieldForSide(side) {
-  const currentSide = currentRemoteTeam.value?.sorteo_lado;
-  return currentSide === side ? "goles_favor" : "goles_contra";
+  return side === "B" ? "marcador_equipo_b" : "marcador_equipo_a";
+}
+
+function onIntegerFieldInput(event, key) {
+  const value = String(event.target.value || "").replace(/\D/g, "");
+  event.target.value = value;
+  currentFieldValues.value[key] = value;
+}
+
+function onCriterionScoreInput(event, field) {
+  const integerPart = String(event.target.value || "").replace(",", ".").split(".")[0] ?? "";
+  const cleaned = integerPart.replace(/\D/g, "");
+  const max = Number(field?.valor_unitario ?? 0);
+  const value = cleaned === "" ? "" : Math.max(0, Math.min(parseInt(cleaned, 10), max));
+
+  event.target.value = value === "" ? "" : String(value);
+  currentFieldValues.value[field.key] = value;
 }
 
 function fightFieldKey(field, side) {
@@ -471,6 +865,10 @@ function individualQuantity(field) {
 }
 
 function individualScore(field) {
+  if (isTablaPuntajeMaximoTemplate.value) {
+    return Number(currentFieldValues.value[field.key] || 0);
+  }
+
   const raw = individualQuantity(field) * Number(field?.valor_unitario || 0);
   return field?.es_penalizacion ? -raw : raw;
 }
@@ -482,12 +880,18 @@ function individualSubtotal() {
 }
 
 function individualPenaltyTotal() {
+  if (isTablaPuntajeMaximoTemplate.value) return 0;
+
   return individualCriterionFields.value
     .filter((field) => field.es_penalizacion)
     .reduce((sum, field) => sum + Math.abs(individualScore(field)), 0);
 }
 
 function individualTotal() {
+  if (isTablaPuntajeMaximoTemplate.value) {
+    return individualSubtotal();
+  }
+
   return individualSubtotal() - individualPenaltyTotal();
 }
 
@@ -497,6 +901,21 @@ const currentVersion = computed(() => {
 
 const currentResultState = computed(() => {
   return remoteFormDefinition.value?.resultado_actual?.estado ?? null;
+});
+
+const currentResultJudgeName = computed(() => {
+  return remoteFormDefinition.value?.resultado_actual?.juez_nombre || "";
+});
+
+const authenticatedJudgeId = computed(() => {
+  return page.props.juez?.id ?? page.props.auth?.user?.id ?? null;
+});
+
+const currentResultRegisteredByOtherJudge = computed(() => {
+  const ownerId = remoteFormDefinition.value?.resultado_actual?.juez_user_id;
+  const currentJudgeId = authenticatedJudgeId.value;
+
+  return Boolean(ownerId && currentJudgeId && Number(ownerId) !== Number(currentJudgeId));
 });
 
 const canEditRemoteResult = computed(() => {
@@ -516,17 +935,34 @@ const scorePreview = computed(() => {
     const mechanism = remoteFormDefinition.value?.config_calificacion?.mecanismo_codigo;
     const template = remoteFormDefinition.value?.config_calificacion?.plantilla_resultado;
 
+    if (template === "marcador") {
+      return `${Number(values.marcador_equipo_a || 0)} - ${Number(values.marcador_equipo_b || 0)}`;
+    }
+
+    if (template === "tiempo") {
+      if (values.sin_tiempo_valido || values.no_participa) {
+        return "Sin tiempo válido";
+      }
+
+      const time = durationValueToSeconds(values.tiempo) ?? 0;
+      const penalty = Number(values.penalizaciones || 0);
+      return formatDurationValue(time + penalty);
+    }
+
+    if (template === "tabla_individual_criterios") {
+      return individualTotal();
+    }
+
+    if (template === "tabla_individual_puntaje_maximo") {
+      return individualTotal();
+    }
+
+    if (template === "tabla_enfrentamiento_criterios") {
+      const side = currentRemoteTeam.value?.sorteo_lado === "B" ? "B" : "A";
+      return fightTotal(side);
+    }
+
     if (mechanism === "registro_resultado") {
-      if (template === "goles") {
-        return `${Number(values.goles_favor || 0)} - ${Number(values.goles_contra || 0)}`;
-      }
-
-      if (template === "ganador") {
-        const result = values.resultado || "sin resultado";
-        const points = Number(values.puntos || 0);
-        return points ? `${result} (${points})` : result;
-      }
-
       if (values.resultado) {
         const points = Number(values.puntos || 0);
         return points ? `${values.resultado} (${points})` : values.resultado;
@@ -538,15 +974,6 @@ const scorePreview = computed(() => {
     }
 
     if (mechanism === "tabla_evaluacion") {
-      if (template === "tabla_individual_criterios") {
-        return individualTotal();
-      }
-
-      if (template === "tabla_enfrentamiento_criterios") {
-        const side = currentRemoteTeam.value?.sorteo_lado === "B" ? "B" : "A";
-        return fightTotal(side);
-      }
-
       const total = dynamicFields.value
         .filter((field) => field.type === "number" && !["penalizaciones"].includes(field.key))
         .reduce((sum, field) => sum + Number(values[field.key] || 0), 0);
@@ -564,7 +991,7 @@ const scorePreview = computed(() => {
     }
 
     if (mechanism === "soccer_goles") {
-      return `${Number(values.goles_favor || 0)} - ${Number(values.goles_contra || 0)}`;
+      return `${Number(values.marcador_equipo_a || 0)} - ${Number(values.marcador_equipo_b || 0)}`;
     }
 
     if (["cronometro", "dron_carrera"].includes(mechanism)) {
@@ -593,6 +1020,92 @@ const scorePreview = computed(() => {
 
 function setNotice(target, type, message) {
   target.value = { type, message };
+
+  if (message) {
+    showToast(message, type || "info");
+  }
+}
+
+function showToast(message, type = "info", ms = 4500) {
+  toast.value = { show: true, type: type || "info", message };
+
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+
+  toastTimer = setTimeout(() => {
+    toast.value.show = false;
+  }, ms);
+}
+
+function closeToast() {
+  toast.value = { show: false, type: "info", message: "" };
+
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+}
+
+function shouldShowNextAttemptModalAfterSave() {
+  if (!isRemoteMode.value || isEnfrentamientoSorteo.value) return false;
+
+  const round = currentRemoteRound.value;
+  const totalAttempts = Number(round?.cantidad_intentos ?? 1);
+  const currentAttempt = Number(remoteSelectedAttemptNumber.value || 1);
+
+  if (totalAttempts <= 1 || currentAttempt >= totalAttempts || round?.intentos_consecutivos) {
+    return false;
+  }
+
+  if (!currentRemoteTeam.value || remoteTeamEvaluationComplete(currentRemoteTeam.value)) {
+    return false;
+  }
+
+  if (!currentSaveWillCompleteEvaluation()) {
+    return false;
+  }
+
+  const currentTeamId = String(remoteSelectedTeamId.value || "");
+
+  return !remoteTeams.value.some((team) => {
+    return Number(team.intento_numero ?? 1) === currentAttempt
+      && String(team.equipo_id) !== currentTeamId
+      && !remoteTeamEvaluationComplete(team)
+      && team.sorteo_estado !== "completado";
+  });
+}
+
+function openNextAttemptModal(attemptNumber) {
+  completedAttemptNumber.value = Number(attemptNumber || 1);
+  nextAttemptNumber.value = completedAttemptNumber.value + 1;
+  nextAttemptModalOpen.value = true;
+}
+
+function continueNextAttempt() {
+  nextAttemptModalOpen.value = false;
+}
+
+function openRoundCompletionModal(publication = {}) {
+  const isFinal = Boolean(publication?.categoria_completa);
+
+  roundCompletionModal.value = {
+    show: true,
+    isFinal,
+    title: isFinal ? "Categoría finalizada" : "Ronda finalizada",
+    message: isFinal
+      ? "La ronda final terminó correctamente. El podio ya está listo: los tres primeros lugares se publicaron en la página de Resultados."
+      : "Ronda finalizada, el sistema calculará automáticamente los clasificados y preparará la siguiente ronda.",
+  };
+}
+
+function closeRoundCompletionModal() {
+  roundCompletionModal.value = {
+    show: false,
+    isFinal: false,
+    title: "",
+    message: "",
+  };
 }
 
 function resetRemoteErrors() {
@@ -607,21 +1120,53 @@ function clearRemoteForm() {
   remoteFormDefinition.value = null;
   remoteForm.observaciones = "";
   remoteForm.motivo_cambio = "";
+  remoteForm.motivo_cambio_opcion = "";
+  remoteForm.motivo_cambio_otro = "";
   remoteForm.version = 0;
   remoteForm.payload = {};
   timeInputDigits.value = "";
   resetRemoteErrors();
 }
 
-function initializeFieldPayload(fields, source = {}) {
+function shouldDefaultCriterionToZero(field, options = {}) {
+  return Boolean(options.defaultCriteriaToZero)
+    && field?.type === "number"
+    && field?.key !== "penalizaciones";
+}
+
+function fieldDefaultValue(field, options = {}) {
+  if (["marcador_equipo_a", "marcador_equipo_b"].includes(field.key)) {
+    return "0";
+  }
+
+  if (shouldDefaultCriterionToZero(field, options)) {
+    return "0";
+  }
+
+  return isBooleanField(field) ? false : "";
+}
+
+function initializeFieldPayload(fields, source = {}, options = {}) {
   const payload = {};
 
   for (const field of fields) {
     const value = source?.[field.key];
-    payload[field.key] = value ?? (isBooleanField(field) ? false : "");
+    payload[field.key] = value ?? fieldDefaultValue(field, options);
   }
 
   return payload;
+}
+
+function comparablePayload(payload) {
+  return JSON.stringify(
+    Object.keys(payload ?? {})
+      .sort()
+      .reduce((acc, key) => {
+        const value = payload[key];
+        acc[key] = value === null || value === undefined || value === "" ? "" : String(value);
+        return acc;
+      }, {})
+  );
 }
 
 function isBooleanField(field) {
@@ -634,18 +1179,28 @@ function isSelectField(field) {
 
 function hydrateRemoteForm(definition) {
   remoteFormDefinition.value = definition;
+  remoteSelectedAttemptNumber.value = Number(definition?.ronda?.intento_actual ?? remoteSelectedAttemptNumber.value ?? 1);
   remoteForm.version = definition?.resultado_actual?.version ?? 0;
   remoteForm.observaciones = definition?.resultado_actual?.observaciones ?? "";
   remoteForm.motivo_cambio = "";
+  remoteForm.motivo_cambio_opcion = "";
+  remoteForm.motivo_cambio_otro = "";
   remoteForm.payload = initializeFieldPayload(
     definition?.config_calificacion?.campos ?? [],
-    definition?.resultado_actual?.payload ?? {}
+    definition?.resultado_actual?.payload ?? {},
+    { defaultCriteriaToZero: isTablaEnfrentamientoTemplate.value || isTablaIndividualTemplate.value || isTablaPuntajeMaximoTemplate.value }
   );
+  remoteForm.payload.sin_tiempo_valido = Boolean(
+    definition?.resultado_actual?.payload?.sin_tiempo_valido
+      ?? definition?.resultado_actual?.payload?.no_participa
+      ?? false
+  );
+  remoteForm.payload.no_participa = false;
 
   if (isTablaEnfrentamientoTemplate.value) {
     for (const field of fightCriterionFields.value) {
-      remoteForm.payload[fightFieldKey(field, "A")] = definition?.resultado_actual?.payload?.[fightFieldKey(field, "A")] ?? "";
-      remoteForm.payload[fightFieldKey(field, "B")] = definition?.resultado_actual?.payload?.[fightFieldKey(field, "B")] ?? "";
+      remoteForm.payload[fightFieldKey(field, "A")] = definition?.resultado_actual?.payload?.[fightFieldKey(field, "A")] ?? "0";
+      remoteForm.payload[fightFieldKey(field, "B")] = definition?.resultado_actual?.payload?.[fightFieldKey(field, "B")] ?? "0";
     }
   }
 
@@ -661,9 +1216,75 @@ function getTopLevelError(key) {
   return remoteErrors.value[key] || mockErrors.value[key] || "";
 }
 
+function stopRemoteLockHeartbeat() {
+  if (remoteLockHeartbeatTimer) {
+    clearInterval(remoteLockHeartbeatTimer);
+    remoteLockHeartbeatTimer = null;
+  }
+}
+
+async function sendRemoteLockHeartbeat(silent = true) {
+  if (!isRemoteMode.value || !remoteSelectedCategoryId.value || remoteCategoryLockedByOther.value) {
+    stopRemoteLockHeartbeat();
+    return;
+  }
+
+  try {
+    const { data } = await axios.post("/juez/evaluaciones/bloqueo/heartbeat", {
+      categoria_id: Number(remoteSelectedCategoryId.value),
+    });
+
+    remoteCategoryLock.value = data?.bloqueo_registro ?? { activo: false, bloqueado: false };
+
+    if (remoteCategoryLockedByOther.value) {
+      stopRemoteLockHeartbeat();
+      clearRemoteForm();
+      setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+    }
+  } catch (error) {
+    if (!silent) {
+      const message = error?.response?.data?.errors?.categoria_id?.[0]
+        || error?.response?.data?.message
+        || "No se pudo renovar el bloqueo de la categoría.";
+      setNotice(remoteNotice, "warning", message);
+    }
+
+    if (error?.response?.status === 422) {
+      stopRemoteLockHeartbeat();
+      clearRemoteForm();
+    }
+  }
+}
+
+function startRemoteLockHeartbeat() {
+  stopRemoteLockHeartbeat();
+
+  if (!isRemoteMode.value || !remoteSelectedCategoryId.value || remoteCategoryLockedByOther.value) {
+    return;
+  }
+
+  remoteLockHeartbeatTimer = setInterval(() => {
+    sendRemoteLockHeartbeat(true);
+  }, 20000);
+}
+
+async function releaseRemoteCategoryLock(categoryId = remoteSelectedCategoryId.value) {
+  if (!isRemoteMode.value || !categoryId) return;
+
+  try {
+    await axios.post("/juez/evaluaciones/bloqueo/liberar", {
+      categoria_id: Number(categoryId),
+    });
+  } catch (_) {
+    // El timeout del backend libera el bloqueo si la pestaña se cierra o la petición falla.
+  }
+}
+
 async function loadRemoteContext(options = {}) {
-  remoteLoading.value = true;
-  setNotice(remoteNotice, "", "");
+  if (!options.silent) {
+    remoteLoading.value = true;
+    setNotice(remoteNotice, "", "");
+  }
 
   try {
     const params = {};
@@ -678,19 +1299,39 @@ async function loadRemoteContext(options = {}) {
 
     const { data } = await axios.get("/juez/evaluaciones/contexto", { params });
     const previousTeamId = options.preserveTeam ? String(remoteSelectedTeamId.value || "") : "";
+    const previousAttempt = options.preserveTeam ? Number(remoteSelectedAttemptNumber.value || 1) : 1;
 
     remoteContext.value = data;
+    remoteCategoryLock.value = data?.bloqueo_registro ?? { activo: false, bloqueado: false };
     remoteSelectedCategoryId.value = data?.seleccion?.categoria_id ?? null;
     remoteSelectedRondaId.value = data?.seleccion?.ronda_id ?? null;
+    startRemoteLockHeartbeat();
 
-    const nextPendingTeam = data?.equipos?.find((item) => !item.resultado_id);
+    if (remoteCategoryLockedByOther.value) {
+      clearRemoteForm();
+      setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+      return;
+    }
+
+    const isFightDraw = data?.sorteo?.tipo_sorteo === "enfrentamiento";
+    const nextPendingTeam = data?.equipos?.find((item) => {
+      if (item.sorteo_estado === "completado") return false;
+
+      return isFightDraw || !remoteTeamEvaluationComplete(item);
+    });
     const stillPending = data?.equipos?.some(
-      (item) => String(item.equipo_id) === previousTeamId && !item.resultado_id
+      (item) => String(item.equipo_id) === previousTeamId
+        && Number(item.intento_numero ?? 1) === previousAttempt
+        && item.sorteo_estado !== "completado"
+        && (data?.sorteo?.tipo_sorteo === "enfrentamiento" || !remoteTeamEvaluationComplete(item))
     );
 
     remoteSelectedTeamId.value = stillPending
       ? previousTeamId
       : String(nextPendingTeam?.equipo_id ?? "");
+    remoteSelectedAttemptNumber.value = stillPending
+      ? previousAttempt
+      : Number(nextPendingTeam?.intento_numero ?? 1);
 
     if (!data?.sorteo) {
       clearRemoteForm();
@@ -703,7 +1344,10 @@ async function loadRemoteContext(options = {}) {
       clearRemoteForm();
     }
   } catch (error) {
+    if (options.silent) return;
+
     clearRemoteForm();
+    remoteCategoryLock.value = { activo: false, bloqueado: false };
     remoteContext.value = null;
     setNotice(
       remoteNotice,
@@ -711,7 +1355,9 @@ async function loadRemoteContext(options = {}) {
       error?.response?.data?.message || "No se pudo cargar el contexto de evaluación del juez."
     );
   } finally {
-    remoteLoading.value = false;
+    if (!options.silent) {
+      remoteLoading.value = false;
+    }
   }
 }
 
@@ -731,6 +1377,7 @@ async function loadRemoteForm() {
       params: {
         ronda_id: Number(remoteSelectedRondaId.value),
         equipo_id: Number(remoteSelectedTeamId.value),
+        intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
       },
     });
 
@@ -762,9 +1409,34 @@ async function onRemoteTeamChange() {
   await loadRemoteForm();
 }
 
+async function selectRemoteTeamFromSummary(item) {
+  if (!item?.equipo_id) return;
+
+  const queueItem = queueItemForSelection(item);
+
+  if (!isSelectableQueueItem(queueItem)) {
+    showToast(queueItemStatusLabel(queueItem), "warning", 4500);
+    return;
+  }
+
+  remoteSelectedTeamId.value = String(queueItem.equipo_id);
+  remoteSelectedAttemptNumber.value = Number(queueItem.intento_numero || 1);
+  await loadRemoteForm();
+}
+
 async function generarSorteoRemoto() {
+  if (!canUseRemoteRegistration.value) {
+    setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+    return;
+  }
+
   if (!remoteSelectedRondaId.value) {
     setNotice(remoteNotice, "error", "Selecciona una ronda antes de generar el sorteo.");
+    return;
+  }
+
+  if (currentSorteo.value && currentRoundHasRemoteResults.value) {
+    setNotice(remoteNotice, "info", "El sorteo de esta ronda ya está generado. Puedes continuar registrando los resultados.");
     return;
   }
 
@@ -809,7 +1481,19 @@ async function generarSorteoRemoto() {
   }
 }
 
-function pickCategory(categoryId) {
+async function pickCategory(categoryId) {
+  const previousRemoteCategoryId = isRemoteMode.value ? remoteSelectedCategoryId.value : null;
+
+  if (
+    isRemoteMode.value
+    && previousRemoteCategoryId
+    && Number(previousRemoteCategoryId) !== Number(categoryId)
+  ) {
+    stopRemoteLockHeartbeat();
+    await releaseRemoteCategoryLock(previousRemoteCategoryId);
+    remoteCategoryLock.value = { activo: false, bloqueado: false };
+  }
+
   selectedCategoryId.value = categoryId;
 
   if (isRemoteMode.value) {
@@ -824,6 +1508,16 @@ function pickCategory(categoryId) {
 }
 
 function normalizeRemotePayload() {
+  if (isTiempoTemplate.value) {
+    return {
+      tiempo: remoteForm.payload.tiempo || null,
+      penalizaciones: null,
+      observaciones: remoteForm.payload.observaciones || null,
+      no_participa: false,
+      sin_tiempo_valido: false,
+    };
+  }
+
   const payload = {};
   const currentSide = currentRemoteTeam.value?.sorteo_lado === "B" ? "B" : "A";
 
@@ -843,7 +1537,20 @@ function normalizeRemotePayload() {
   return payload;
 }
 
+function motivoCambioSeleccionado() {
+  if (remoteForm.motivo_cambio_opcion === "Otro") {
+    return String(remoteForm.motivo_cambio_otro || "").trim();
+  }
+
+  return String(remoteForm.motivo_cambio_opcion || "").trim();
+}
+
 async function registrarResultadoRemoto() {
+  if (!canUseRemoteRegistration.value) {
+    setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+    return;
+  }
+
   if (!currentSorteo.value) {
     setNotice(remoteNotice, "error", "Genera el sorteo antes de registrar resultados.");
     return;
@@ -869,6 +1576,19 @@ async function registrarResultadoRemoto() {
 
   try {
     const payload = normalizeRemotePayload();
+    const savedAttemptNumber = Number(remoteSelectedAttemptNumber.value || 1);
+    const showNextAttemptModal = shouldShowNextAttemptModalAfterSave();
+
+    if (isTiempoTemplate.value) {
+      const seconds = durationValueToSeconds(payload.tiempo);
+
+      if (seconds !== null && seconds <= 0) {
+        remoteErrors.value = { "payload.tiempo": "El tiempo debe ser mayor a cero. Si no hay tiempo válido, usa Sin tiempo válido." };
+        setNotice(remoteNotice, "warning", "No se puede guardar 00:00:00 como tiempo válido.");
+        return;
+      }
+    }
+
     const observaciones =
       payload.observaciones !== undefined && payload.observaciones !== null
         ? String(payload.observaciones)
@@ -877,14 +1597,45 @@ async function registrarResultadoRemoto() {
     const { data } = await axios.post("/juez/evaluaciones", {
       ronda_id: Number(remoteSelectedRondaId.value),
       equipo_id: Number(remoteSelectedTeamId.value),
+      intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
+      expected_juez_user_id: authenticatedJudgeId.value ? Number(authenticatedJudgeId.value) : null,
       version: Number(remoteForm.version || 0),
       observaciones,
-      motivo_cambio: remoteForm.motivo_cambio || null,
+      motivo_cambio: motivoCambioSeleccionado() || null,
       payload,
     });
+    const automaticPublication = data?.publicacion_automatica ?? {};
+    const roundCompleted = Boolean(automaticPublication.ronda_completa);
 
     hydrateRemoteForm(data);
-    await loadRemoteContext();
+    await loadRemoteContext({ preserveTeam: isEnfrentamientoSorteo.value });
+
+    if (showNextAttemptModal && !roundCompleted) {
+      openNextAttemptModal(savedAttemptNumber);
+    }
+
+    if (roundCompleted) {
+      openRoundCompletionModal(automaticPublication);
+    }
+
+    if (isEnfrentamientoSorteo.value) {
+      setNotice(
+        remoteNotice,
+        "success",
+        "Resultado actualizado y publicado en vivo. Cuando termine el combate, pulsa Terminar encuentro."
+      );
+      return;
+    }
+
+    if (currentRemoteTeam.value?.resultado_id && !remoteTeamEvaluationComplete(currentRemoteTeam.value)) {
+      setNotice(
+        remoteNotice,
+        "success",
+        `Evaluacion guardada correctamente. Faltan ${Number(currentRemoteTeam.value.evaluaciones_pendientes ?? 0)} calificaciones de otros jueces para avanzar.`
+      );
+      return;
+    }
+
     setNotice(
       remoteNotice,
       "success",
@@ -917,6 +1668,197 @@ async function registrarResultadoRemoto() {
     );
   } finally {
     remoteSaving.value = false;
+  }
+}
+
+function abrirModalSinTiempoValido() {
+  if (!currentSorteo.value) {
+    setNotice(remoteNotice, "error", "Genera el sorteo antes de registrar resultados.");
+    return;
+  }
+
+  if (!remoteSelectedRondaId.value || !remoteSelectedTeamId.value) {
+    setNotice(remoteNotice, "error", "Selecciona una ronda y un equipo antes de marcar sin tiempo válido.");
+    return;
+  }
+
+  if (!isTiempoTemplate.value) {
+    setNotice(remoteNotice, "warning", "La opción Sin tiempo válido solo aplica para la plantilla de tiempo.");
+    return;
+  }
+
+  if (!canEditRemoteResult.value) {
+    setNotice(
+      remoteNotice,
+      "warning",
+      "Esta categoría no permite editar el resultado del juez una vez guardado."
+    );
+    return;
+  }
+
+  invalidTimeReason.value = "No completa el circuito";
+  invalidTimeOtherReason.value = "";
+  invalidTimeModalOpen.value = true;
+}
+
+function cerrarModalSinTiempoValido() {
+  invalidTimeModalOpen.value = false;
+}
+
+function motivoSinTiempoValido() {
+  const motivo = invalidTimeReason.value === "Otro"
+    ? invalidTimeOtherReason.value
+    : invalidTimeReason.value;
+
+  return String(motivo || "Sin tiempo válido").trim();
+}
+
+async function confirmarSinTiempoValidoRemoto() {
+  if (!canUseRemoteRegistration.value) {
+    setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+    return;
+  }
+
+  const motivo = motivoSinTiempoValido();
+
+  if (!motivo) {
+    setNotice(remoteNotice, "warning", "Selecciona o escribe un motivo para continuar.");
+    return;
+  }
+
+  remoteSaving.value = true;
+  resetRemoteErrors();
+  setNotice(remoteNotice, "", "");
+
+  try {
+    const observaciones = motivo;
+    const savedAttemptNumber = Number(remoteSelectedAttemptNumber.value || 1);
+    const showNextAttemptModal = shouldShowNextAttemptModalAfterSave();
+
+    const { data } = await axios.post("/juez/evaluaciones", {
+      ronda_id: Number(remoteSelectedRondaId.value),
+      equipo_id: Number(remoteSelectedTeamId.value),
+      intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
+      expected_juez_user_id: authenticatedJudgeId.value ? Number(authenticatedJudgeId.value) : null,
+      version: Number(remoteForm.version || 0),
+      observaciones,
+      motivo_cambio: motivoCambioSeleccionado() || null,
+      payload: {
+        tiempo: null,
+        penalizaciones: null,
+        observaciones,
+        sin_tiempo_valido: true,
+        motivo_sin_tiempo_valido: motivo,
+      },
+    });
+    const automaticPublication = data?.publicacion_automatica ?? {};
+    const roundCompleted = Boolean(automaticPublication.ronda_completa);
+
+    invalidTimeModalOpen.value = false;
+    hydrateRemoteForm(data);
+    await loadRemoteContext({ preserveTeam: false });
+
+    if (showNextAttemptModal && !roundCompleted) {
+      openNextAttemptModal(savedAttemptNumber);
+    }
+
+    if (roundCompleted) {
+      openRoundCompletionModal(automaticPublication);
+    }
+
+    if (currentRemoteTeam.value?.resultado_id && !remoteTeamEvaluationComplete(currentRemoteTeam.value)) {
+      setNotice(
+        remoteNotice,
+        "success",
+        `Intento marcado como Sin tiempo válido. Faltan ${Number(currentRemoteTeam.value.evaluaciones_pendientes ?? 0)} calificaciones de otros jueces para avanzar.`
+      );
+      return;
+    }
+
+    setNotice(
+      remoteNotice,
+      "success",
+      remoteSelectedTeamId.value
+        ? "Intento marcado como Sin tiempo válido. Se cargó el siguiente participante."
+        : "Intento marcado como Sin tiempo válido. Ya no hay participantes pendientes."
+    );
+  } catch (error) {
+    if (error?.response?.status === 409) {
+      setNotice(
+        remoteNotice,
+        "warning",
+        error?.response?.data?.message ||
+          "La evaluación fue actualizada por otra sesión. Se recargó el formulario."
+      );
+      await loadRemoteForm();
+      return;
+    }
+
+    if (error?.response?.status === 422) {
+      remoteErrors.value = error.response.data?.errors ?? {};
+      setNotice(remoteNotice, "error", error?.response?.data?.message || "Revisa la información antes de guardar.");
+      return;
+    }
+
+    setNotice(
+      remoteNotice,
+      "error",
+      error?.response?.data?.message || "No se pudo marcar el intento como Sin tiempo válido."
+    );
+  } finally {
+    remoteSaving.value = false;
+  }
+}
+
+async function terminarEncuentroRemoto() {
+  if (!canUseRemoteRegistration.value) {
+    setNotice(remoteNotice, "warning", remoteCategoryLockMessage.value);
+    return;
+  }
+
+  if (!canFinishCurrentMatch.value) {
+    setNotice(remoteNotice, "error", "Selecciona un encuentro activo antes de finalizar.");
+    return;
+  }
+
+  remoteEndingMatch.value = true;
+  resetRemoteErrors();
+  setNotice(remoteNotice, "", "");
+
+  try {
+    const { data } = await axios.post("/juez/evaluaciones/terminar-encuentro", {
+      ronda_id: Number(remoteSelectedRondaId.value),
+      equipo_id: Number(remoteSelectedTeamId.value),
+      payload: normalizeRemotePayload(),
+    });
+
+    await loadRemoteContext();
+
+    if (data?.ronda_completa) {
+      openRoundCompletionModal(data);
+    }
+
+    setNotice(
+      remoteNotice,
+      "success",
+      remoteSelectedTeamId.value
+        ? "Encuentro finalizado. Se cargó el siguiente combate pendiente."
+        : "Encuentro finalizado. Ya no hay combates pendientes en esta ronda."
+    );
+  } catch (error) {
+    if (error?.response?.status === 422) {
+      remoteErrors.value = error.response.data?.errors ?? {};
+      setNotice(remoteNotice, "error", error?.response?.data?.message || "Revisa el encuentro antes de finalizar.");
+      return;
+    }
+
+    setNotice(
+      remoteNotice,
+      "error",
+      error?.response?.data?.message || "No se pudo finalizar el encuentro."
+    );
+  } finally {
+    remoteEndingMatch.value = false;
   }
 }
 
@@ -1007,19 +1949,249 @@ watch(
   }
 );
 
+watch(finishCurrentMatchHint, (message, previous) => {
+  if (message && message !== previous) {
+    showToast(message, "warning", 4500);
+  }
+});
+
+async function syncRemoteQueueIfWaiting() {
+  if (!isRemoteMode.value || !isRemoteMultiJudge.value || remoteLoading.value || remoteSaving.value || remoteEndingMatch.value) {
+    return;
+  }
+
+  if (!currentRemoteTeam.value?.resultado_id || currentRemoteHasUnsavedChanges.value) {
+    return;
+  }
+
+  await loadRemoteContext({ preserveTeam: true, silent: true });
+}
+
 onMounted(async () => {
   if (isRemoteMode.value) {
     await loadRemoteContext();
+    remoteSyncTimer = setInterval(syncRemoteQueueIfWaiting, 4000);
     return;
   }
 
   resetMockForm();
+});
+
+onBeforeUnmount(() => {
+  if (toastTimer) {
+    clearTimeout(toastTimer);
+  }
+
+  if (remoteSyncTimer) {
+    clearInterval(remoteSyncTimer);
+    remoteSyncTimer = null;
+  }
+
+  stopRemoteLockHeartbeat();
+  releaseRemoteCategoryLock();
 });
 </script>
 
 <template>
   <div class="space-y-6">
     <div
+      v-if="toast.show"
+      class="fixed right-4 top-4 z-[10050] w-[min(92vw,420px)] rounded-2xl border bg-white p-4 shadow-2xl"
+      :class="{
+        'border-emerald-200': toast.type === 'success',
+        'border-amber-200': toast.type === 'warning',
+        'border-red-200': toast.type === 'error',
+        'border-slate-200': !['success', 'warning', 'error'].includes(toast.type),
+      }"
+      role="status"
+      aria-live="polite"
+    >
+      <div class="flex items-start gap-3">
+        <div
+          class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+          :class="{
+            'bg-emerald-50 text-emerald-700': toast.type === 'success',
+            'bg-amber-50 text-amber-700': toast.type === 'warning',
+            'bg-red-50 text-red-700': toast.type === 'error',
+            'bg-slate-100 text-slate-700': !['success', 'warning', 'error'].includes(toast.type),
+          }"
+        >
+          <CheckCircleIcon v-if="toast.type === 'success'" class="h-5 w-5" />
+          <ClockIcon v-else-if="toast.type === 'warning'" class="h-5 w-5" />
+          <XMarkIcon v-else-if="toast.type === 'error'" class="h-5 w-5" />
+          <ClipboardDocumentListIcon v-else class="h-5 w-5" />
+        </div>
+
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-semibold text-slate-900">
+            {{ toast.type === "success" ? "Correcto" : toast.type === "error" ? "Revisa la información" : toast.type === "warning" ? "Atención" : "Mensaje" }}
+          </p>
+          <p class="mt-1 text-sm leading-5 text-slate-600">{{ toast.message }}</p>
+        </div>
+
+        <button
+          type="button"
+          class="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+          @click="closeToast"
+          aria-label="Cerrar mensaje"
+        >
+          <XMarkIcon class="h-5 w-5" />
+        </button>
+      </div>
+    </div>
+
+    <Teleport to="body">
+      <div
+        v-if="invalidTimeModalOpen"
+        class="fixed inset-0 z-[10070] flex items-center justify-center bg-slate-950/50 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="invalid-time-title"
+        @click.self="cerrarModalSinTiempoValido"
+      >
+        <div class="relative w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <p id="invalid-time-title" class="text-lg font-bold text-slate-900">Motivo</p>
+              <p class="mt-1 text-sm text-slate-500">
+                Selecciona por qué este intento no tiene un tiempo válido.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+              @click="cerrarModalSinTiempoValido"
+              aria-label="Cerrar"
+            >
+              <XMarkIcon class="h-5 w-5" />
+            </button>
+          </div>
+
+          <div class="mt-5 grid gap-2">
+            <label
+              v-for="reason in invalidTimeReasons"
+              :key="reason"
+              class="flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-semibold transition"
+              :class="invalidTimeReason === reason ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'"
+            >
+              <input
+                v-model="invalidTimeReason"
+                type="radio"
+                :value="reason"
+                class="h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>{{ reason }}</span>
+            </label>
+          </div>
+
+          <textarea
+            v-if="invalidTimeReason === 'Otro'"
+            v-model="invalidTimeOtherReason"
+            rows="3"
+            class="mt-4 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="Escribe el motivo"
+          />
+
+          <div class="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-50"
+              @click="cerrarModalSinTiempoValido"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              class="rounded-xl bg-blue-600 px-4 py-2.5 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="remoteSaving || (invalidTimeReason === 'Otro' && !invalidTimeOtherReason.trim())"
+              @click="confirmarSinTiempoValidoRemoto"
+            >
+              {{ remoteSaving ? "Guardando..." : "Aceptar" }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
+        v-if="nextAttemptModalOpen"
+        class="fixed inset-0 z-[10080] flex items-center justify-center bg-slate-950/50 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="next-attempt-title"
+      >
+        <div class="relative w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-2xl">
+          <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+            <CheckCircleIcon class="h-8 w-8" />
+          </div>
+
+          <h2 id="next-attempt-title" class="mt-4 text-xl font-bold text-slate-900">
+            Intento {{ completedAttemptNumber }} finalizado
+          </h2>
+
+          <p class="mt-2 text-sm leading-6 text-slate-600">
+            Desea continuar con el intento {{ nextAttemptNumber }}?
+          </p>
+
+          <button
+            type="button"
+            class="mt-6 inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+            @click="continueNextAttempt"
+          >
+            Continuar
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-if="roundCompletionModal.show"
+        class="fixed inset-0 z-[10090] flex items-center justify-center bg-slate-950/50 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="round-completion-title"
+        @click.self="closeRoundCompletionModal"
+      >
+        <div class="relative w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-2xl">
+          <div
+            class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl"
+            :class="roundCompletionModal.isFinal ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'"
+          >
+            <TrophyIcon v-if="roundCompletionModal.isFinal" class="h-8 w-8" />
+            <CheckCircleIcon v-else class="h-8 w-8" />
+          </div>
+
+          <h2 id="round-completion-title" class="mt-4 text-xl font-bold text-slate-900">
+            {{ roundCompletionModal.title }}
+          </h2>
+
+          <p class="mt-2 text-sm leading-6 text-slate-600">
+            {{ roundCompletionModal.message }}
+          </p>
+
+          <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-center">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-5 py-3 font-semibold text-slate-700 transition hover:bg-slate-50"
+              @click="closeRoundCompletionModal"
+            >
+              Entendido
+            </button>
+
+            <a
+              v-if="roundCompletionModal.isFinal"
+              href="/resultados"
+              class="inline-flex items-center justify-center rounded-xl bg-amber-500 px-5 py-3 font-semibold text-white shadow-sm transition hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2"
+            >
+              Ver resultados
+            </a>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <div
+      v-if="!isRemoteMode"
       class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4"
       :class="isRemoteMode ? 'border-blue-200 bg-blue-50/40' : ''"
     >
@@ -1065,17 +2237,6 @@ onMounted(async () => {
           Tus categorías y equipos se cargan desde las asignaciones activas del juez.
         </div>
       </div>
-    </div>
-
-    <div v-if="(isRemoteMode && remoteNotice.message) || (!isRemoteMode && mockNotice.message)"
-      class="rounded-2xl border px-4 py-3 text-sm"
-      :class="{
-        'border-emerald-200 bg-emerald-50 text-emerald-700': (isRemoteMode ? remoteNotice.type : mockNotice.type) === 'success',
-        'border-amber-200 bg-amber-50 text-amber-800': (isRemoteMode ? remoteNotice.type : mockNotice.type) === 'warning',
-        'border-red-200 bg-red-50 text-red-700': (isRemoteMode ? remoteNotice.type : mockNotice.type) === 'error',
-      }"
-    >
-      {{ isRemoteMode ? remoteNotice.message : mockNotice.message }}
     </div>
 
     <div
@@ -1153,8 +2314,8 @@ onMounted(async () => {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div class="lg:col-span-2 rounded-2xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6">
+      <div class="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+        <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6">
           <div class="mb-5 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
               <ClipboardDocumentListIcon class="h-5 w-5 text-blue-600" />
@@ -1189,130 +2350,7 @@ onMounted(async () => {
               </p>
             </div>
 
-            <div
-              v-if="isRemoteMode"
-              class="rounded-2xl border p-4"
-              :class="currentSorteo ? 'border-blue-200 bg-blue-50/50' : 'border-amber-200 bg-amber-50'"
-            >
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div class="flex items-start gap-3">
-                  <div
-                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
-                    :class="currentSorteo ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'"
-                  >
-                    <SparklesIcon class="h-6 w-6" />
-                  </div>
-
-                  <div>
-                    <p class="text-sm font-semibold text-slate-900">Sorteo de la ronda</p>
-                    <p class="mt-1 text-sm text-slate-600">
-                      {{ currentSorteo ? currentSorteoLabel : "Genera el sorteo antes de registrar resultados." }}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  @click="generarSorteoRemoto"
-                  :disabled="remoteDrawGenerating || !remoteSelectedRondaId"
-                  class="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
-                  :class="currentSorteo ? 'border border-blue-200 bg-white text-blue-700 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'"
-                >
-                  <SparklesIcon class="h-5 w-5" />
-                  {{ remoteDrawGenerating ? "Generando..." : currentSorteo ? "Generar nuevamente" : "Generar sorteo" }}
-                </button>
-              </div>
-
-              <div v-if="currentSorteo?.tipo_sorteo === 'individual'" class="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
-                <div class="max-h-80 overflow-y-auto">
-                  <table class="min-w-full text-sm">
-                    <thead class="sticky top-0 z-10 bg-blue-50 text-left text-xs uppercase tracking-wide text-blue-700">
-                      <tr>
-                        <th class="w-20 px-4 py-3 font-semibold">Orden</th>
-                        <th class="px-4 py-3 font-semibold">Participante</th>
-                        <th class="px-4 py-3 font-semibold">Institucion</th>
-                        <th class="w-28 px-4 py-3 font-semibold">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                      <tr
-                        v-for="detalle in currentSorteo.detalles"
-                        :key="`orden-${detalle.id}`"
-                        class="transition"
-                        :class="String(detalle.equipo_id) === String(remoteSelectedTeamId) ? 'bg-blue-50/80' : 'bg-white'"
-                      >
-                        <td class="px-4 py-3">
-                          <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
-                            {{ detalle.orden }}
-                          </span>
-                        </td>
-                        <td class="px-4 py-3 font-semibold text-slate-900">{{ detalle.equipo_nombre }}</td>
-                        <td class="px-4 py-3 text-slate-600">{{ detalle.institucion || "Sin institucion" }}</td>
-                        <td class="px-4 py-3">
-                          <span
-                            class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
-                            :class="remoteTeams.some((team) => Number(team.equipo_id) === Number(detalle.equipo_id) && team.resultado_id)
-                              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
-                              : String(detalle.equipo_id) === String(remoteSelectedTeamId)
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-slate-100 text-slate-600'"
-                          >
-                            {{
-                              remoteTeams.some((team) => Number(team.equipo_id) === Number(detalle.equipo_id) && team.resultado_id)
-                                ? "Calificado"
-                                : String(detalle.equipo_id) === String(remoteSelectedTeamId)
-                                  ? "Actual"
-                                  : "Pendiente"
-                            }}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div v-else-if="currentSorteo?.tipo_sorteo === 'enfrentamiento'" class="mt-4 overflow-hidden rounded-2xl border border-blue-100 bg-white">
-                <div class="max-h-80 overflow-y-auto">
-                  <table class="min-w-full text-sm">
-                    <thead class="sticky top-0 z-10 bg-blue-50 text-left text-xs uppercase tracking-wide text-blue-700">
-                      <tr>
-                        <th class="w-24 px-4 py-3 font-semibold">Combate</th>
-                        <th class="px-4 py-3 font-semibold">Equipo A</th>
-                        <th class="px-4 py-3 font-semibold">Equipo B</th>
-                        <th class="w-28 px-4 py-3 font-semibold">Estado</th>
-                      </tr>
-                    </thead>
-                    <tbody class="divide-y divide-slate-100">
-                      <tr v-for="group in sorteoGroups" :key="`grupo-${group.grupo}`">
-                        <td class="px-4 py-3 font-semibold text-slate-900">{{ group.grupo }}</td>
-                        <td class="px-4 py-3">
-                          <p class="font-semibold text-slate-900">{{ group.items.find((item) => item.lado === 'A')?.equipo_nombre || group.items[0]?.equipo_nombre || "-" }}</p>
-                          <p class="text-xs text-slate-500">{{ group.items.find((item) => item.lado === 'A')?.institucion || group.items[0]?.institucion || "Sin institucion" }}</p>
-                        </td>
-                        <td class="px-4 py-3">
-                          <template v-if="group.items.some((item) => item.lado === 'BYE')">
-                            <p class="font-semibold text-blue-700">Pasa directo</p>
-                            <p class="text-xs text-slate-500">Bye automatico</p>
-                          </template>
-                          <template v-else>
-                            <p class="font-semibold text-slate-900">{{ group.items.find((item) => item.lado === 'B')?.equipo_nombre || "-" }}</p>
-                            <p class="text-xs text-slate-500">{{ group.items.find((item) => item.lado === 'B')?.institucion || "Sin institucion" }}</p>
-                          </template>
-                        </td>
-                        <td class="px-4 py-3">
-                          <span class="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                            Pendiente
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div v-else-if="mockAvailableSubcats.length">
+            <div v-if="!isRemoteMode && mockAvailableSubcats.length">
               <label class="mb-1 block text-sm font-semibold text-slate-800">
                 Subcategoría <span class="text-red-500">*</span>
               </label>
@@ -1332,7 +2370,7 @@ onMounted(async () => {
 
             <div v-if="isRemoteMode">
               <label class="mb-1 block text-sm font-semibold text-slate-800">
-                Equipo actual <span class="text-red-500">*</span>
+                {{ isEnfrentamientoSorteo ? "Combate actual" : "Equipo actual" }} <span class="text-red-500">*</span>
               </label>
 
               <div
@@ -1340,15 +2378,32 @@ onMounted(async () => {
                 class="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4"
               >
                 <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
+                  <div :class="isEnfrentamientoSorteo ? '' : 'flex-1 text-center'">
                     <p class="text-xs font-semibold uppercase tracking-wide text-blue-700">
-                      Participante {{ currentRemoteTeam.sorteo_orden ? `#${currentRemoteTeam.sorteo_orden}` : "actual" }}
+                      {{
+                        isEnfrentamientoSorteo
+                          ? `Combate #${currentRemoteTeam.sorteo_grupo || currentRemoteTeam.sorteo_orden || "actual"}`
+                          : `Participante ${currentRemoteTeam.sorteo_orden ? `#${currentRemoteTeam.sorteo_orden}` : "actual"} · ${currentRemoteTeam.intento_label || `Intento ${currentRemoteTeam.intento_numero || 1}`}`
+                      }}
                     </p>
-                    <p class="mt-1 text-xl font-bold text-slate-950">{{ currentRemoteTeam.equipo_nombre }}</p>
-                    <p class="mt-1 text-sm text-slate-600">{{ currentRemoteTeam.institucion || "Sin institucion" }}</p>
+                    <template v-if="isEnfrentamientoSorteo">
+                      <p class="mt-1 text-xl font-bold text-slate-950">
+                        {{ participantName(scoreboardTeamA, "Participante A") }}
+                        <span class="mx-2 text-sm font-black text-blue-700">VS</span>
+                        {{ participantName(scoreboardTeamB, "Pasa directo") }}
+                      </p>
+                      <p class="mt-1 text-sm text-slate-600">
+                        {{ scoreboardTeamA?.institucion || "Sin institucion" }}
+                        <span v-if="scoreboardTeamB"> / {{ scoreboardTeamB?.institucion || "Sin institucion" }}</span>
+                      </p>
+                    </template>
+                    <template v-else>
+                      <p class="mt-1 text-xl font-bold text-slate-950">{{ participantName(currentRemoteTeam) }}</p>
+                      <p class="mt-1 text-sm text-slate-600">{{ currentRemoteTeam.institucion || "Sin institucion" }}</p>
+                    </template>
                   </div>
                   <span class="inline-flex rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 ring-1 ring-blue-200">
-                    {{ pendingRemoteTeams.length }} pendientes
+                    {{ pendingRemoteTeams.length }} registros pendientes
                   </span>
                 </div>
               </div>
@@ -1373,7 +2428,7 @@ onMounted(async () => {
                 >
                   <option disabled value="">Selecciona un equipo</option>
                   <option v-for="team in remoteTeams" :key="team.equipo_id" :value="String(team.equipo_id)">
-                    {{ team.sorteo_orden ? `${team.sorteo_orden}. ` : '' }}{{ team.equipo_nombre }} - {{ team.institucion || 'Sin institución' }}
+                    {{ team.sorteo_orden ? `${team.sorteo_orden}. ` : '' }}{{ participantName(team) }} - {{ team.institucion || 'Sin institución' }}
                   </option>
                 </select>
               </template>
@@ -1419,7 +2474,7 @@ onMounted(async () => {
               v-if="isRemoteMode && remoteFormDefinition"
               class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
             >
-              <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <div>
                   <p class="font-semibold text-slate-900">Estado</p>
                   <p>{{ currentResultState || "sin registro" }}</p>
@@ -1430,11 +2485,21 @@ onMounted(async () => {
                   <p>{{ currentVersion }}</p>
                 </div>
 
-                <div>
-                  <p class="font-semibold text-slate-900">Orden ranking</p>
-                  <p>{{ remoteFormDefinition.config_calificacion.orden_ranking === "asc" ? "Menor primero" : "Mayor primero" }}</p>
+                <div v-if="currentResultJudgeName">
+                  <p class="font-semibold text-slate-900">Registrado por</p>
+                  <p>
+                    {{ currentResultJudgeName }}
+                    <span v-if="currentResultRegisteredByOtherJudge" class="text-amber-700">(otro juez)</span>
+                  </p>
                 </div>
               </div>
+            </div>
+
+            <div
+              v-if="remoteCategoryLockedByOther"
+              class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800"
+            >
+              {{ remoteCategoryLockMessage }}
             </div>
 
             <div
@@ -1483,12 +2548,12 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="isTablaIndividualTemplate && individualCriterionFields.length"
+              v-if="(isTablaIndividualTemplate || isTablaPuntajeMaximoTemplate) && individualCriterionFields.length"
               class="overflow-hidden rounded-2xl border border-slate-800 bg-[#1f1f1f] text-white shadow-sm"
             >
               <div class="grid grid-cols-[1.15fr_1fr] items-center border-b border-white/10 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-200">
-                <span>Estadisticas</span>
-                <span>{{ currentRemoteTeam?.equipo_nombre || "Equipo" }}</span>
+                <span>Estadísticas</span>
+                <span>{{ participantName(currentRemoteTeam, "Equipo") }}</span>
               </div>
 
               <div class="overflow-x-auto">
@@ -1496,9 +2561,13 @@ onMounted(async () => {
                   <thead>
                     <tr class="text-xs uppercase tracking-wide text-slate-300">
                       <th class="px-3 py-3 text-center">Criterio</th>
-                      <th class="px-3 py-3 text-center">Valor</th>
-                      <th class="px-3 py-3 text-center text-emerald-300">Cantidad</th>
-                      <th class="px-3 py-3 text-center text-yellow-300">Puntaje</th>
+                      <th class="px-3 py-3 text-center">
+                        {{ isTablaPuntajeMaximoTemplate ? "Puntaje máximo" : "Valor" }}
+                      </th>
+                      <th class="px-3 py-3 text-center text-emerald-300">
+                        {{ isTablaPuntajeMaximoTemplate ? "Puntaje" : "Cantidad" }}
+                      </th>
+                      <th v-if="!isTablaPuntajeMaximoTemplate" class="px-3 py-3 text-center text-yellow-300">Puntaje</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1507,21 +2576,29 @@ onMounted(async () => {
                       :key="`judge-individual-${field.key}`"
                       class="border-t border-white/5"
                     >
-                      <td class="px-3 py-3 text-center">
-                        <p class="font-semibold text-white">{{ field.label }}</p>
-                        <p class="text-xs text-slate-400">Suma al subtotal</p>
+                        <td class="px-3 py-3 text-center">
+                          <p class="font-semibold text-white">{{ field.label }}</p>
+                          <p class="text-xs text-slate-400">
+                            {{ isTablaPuntajeMaximoTemplate ? "Maximo permitido" : "Suma al subtotal" }}
+                          </p>
+                        </td>
+                      <td class="px-3 py-3 text-center text-slate-200">
+                        {{ isTablaPuntajeMaximoTemplate ? Number(field.valor_unitario || 0) : `x ${Number(field.valor_unitario || 0)}` }}
                       </td>
-                      <td class="px-3 py-3 text-center text-slate-200">x {{ Number(field.valor_unitario || 0) }}</td>
                       <td class="px-3 py-3 text-center">
                         <input
-                          v-model="currentFieldValues[field.key]"
-                          type="number"
+                          :value="currentFieldValues[field.key]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           min="0"
-                          step="1"
+                          :max="isTablaPuntajeMaximoTemplate ? Number(field.valor_unitario || 0) : undefined"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="isTablaPuntajeMaximoTemplate ? onCriterionScoreInput($event, field) : onIntegerFieldInput($event, field.key)"
                         />
                       </td>
-                      <td class="px-3 py-3 text-center">
+                      <td v-if="!isTablaPuntajeMaximoTemplate" class="px-3 py-3 text-center">
                         <span class="inline-flex min-w-12 justify-center rounded-lg border-2 border-yellow-300 px-2 py-1 font-bold text-yellow-100">
                           {{ individualScore(field) }}
                         </span>
@@ -1529,12 +2606,14 @@ onMounted(async () => {
                     </tr>
 
                     <tr class="border-t-4 border-red-600 bg-[#242424] text-sm font-bold">
-                      <td colspan="3" class="px-3 py-4 text-center text-white">Subtotal</td>
+                      <td class="px-3 py-4 text-center text-white">Subtotal</td>
+                      <td class="px-3 py-4"></td>
+                      <td v-if="!isTablaPuntajeMaximoTemplate" class="px-3 py-4"></td>
                       <td class="px-3 py-4 text-center text-yellow-100">{{ individualSubtotal() }}</td>
                     </tr>
 
                     <tr
-                      v-for="field in individualCriterionFields.filter((item) => item.es_penalizacion)"
+                      v-for="field in individualCriterionFields.filter((item) => !isTablaPuntajeMaximoTemplate && item.es_penalizacion)"
                       :key="`judge-individual-penalty-${field.key}`"
                       class="border-t border-white/5"
                     >
@@ -1545,11 +2624,13 @@ onMounted(async () => {
                       <td class="px-3 py-3 text-center text-slate-200">x {{ Number(field.valor_unitario || 0) }}</td>
                       <td class="px-3 py-3 text-center">
                         <input
-                          v-model="currentFieldValues[field.key]"
-                          type="number"
-                          min="0"
-                          step="1"
+                          :value="currentFieldValues[field.key]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="onIntegerFieldInput($event, field.key)"
                         />
                       </td>
                       <td class="px-3 py-3 text-center">
@@ -1561,7 +2642,9 @@ onMounted(async () => {
                   </tbody>
                   <tfoot>
                     <tr class="border-t-4 border-red-600 bg-[#242424] text-base font-bold">
-                      <td colspan="3" class="px-3 py-5 text-center uppercase tracking-wide text-white">Resultado final</td>
+                      <td class="px-3 py-5 text-center uppercase tracking-wide text-white">Resultado final</td>
+                      <td class="px-3 py-5"></td>
+                      <td v-if="!isTablaPuntajeMaximoTemplate" class="px-3 py-5"></td>
                       <td class="px-3 py-5 text-center text-yellow-100">{{ individualTotal() }}</td>
                     </tr>
                   </tfoot>
@@ -1574,9 +2657,9 @@ onMounted(async () => {
               class="overflow-hidden rounded-2xl border border-slate-800 bg-[#1f1f1f] text-white shadow-sm"
             >
               <div class="grid grid-cols-[1fr_1.15fr_1fr] items-center border-b border-white/10 px-4 py-3 text-center text-xs font-semibold uppercase tracking-wide text-slate-200">
-                <span>{{ scoreboardTeamA?.equipo_nombre || "Equipo A" }}</span>
+                <span>{{ participantName(scoreboardTeamA, "Equipo A") }}</span>
                 <span>Estadísticas</span>
-                <span>{{ scoreboardTeamB?.equipo_nombre || "Equipo B" }}</span>
+                <span>{{ participantName(scoreboardTeamB, "Equipo B") }}</span>
               </div>
 
               <div class="overflow-x-auto">
@@ -1604,11 +2687,13 @@ onMounted(async () => {
                       </td>
                       <td class="px-3 py-2 text-center">
                         <input
-                          v-model="currentFieldValues[fightFieldKey(field, 'A')]"
-                          type="number"
-                          min="0"
-                          step="1"
+                          :value="currentFieldValues[fightFieldKey(field, 'A')]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="onIntegerFieldInput($event, fightFieldKey(field, 'A'))"
                         />
                       </td>
                       <td class="px-3 py-2 text-center">
@@ -1618,11 +2703,13 @@ onMounted(async () => {
                       <td class="px-3 py-2 text-center text-slate-200">x {{ Number(field.valor_unitario || 0) }}</td>
                       <td class="px-3 py-2 text-center">
                         <input
-                          v-model="currentFieldValues[fightFieldKey(field, 'B')]"
-                          type="number"
-                          min="0"
-                          step="1"
+                          :value="currentFieldValues[fightFieldKey(field, 'B')]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="onIntegerFieldInput($event, fightFieldKey(field, 'B'))"
                         />
                       </td>
                       <td class="px-3 py-2 text-center">
@@ -1633,9 +2720,12 @@ onMounted(async () => {
                     </tr>
 
                     <tr class="border-t-4 border-red-600 bg-[#242424] text-sm font-bold">
-                      <td colspan="2" class="px-3 py-3 text-center text-yellow-100">{{ fightSubtotal('A') }}</td>
-                      <td colspan="2" class="px-3 py-3 text-center text-white">Subtotal</td>
-                      <td colspan="2" class="px-3 py-3 text-center text-yellow-100">{{ fightSubtotal('B') }}</td>
+                      <td class="px-3 py-3 text-center text-yellow-100">{{ fightSubtotal('A') }}</td>
+                      <td class="px-3 py-3"></td>
+                      <td class="px-3 py-3 text-center text-white">Subtotal</td>
+                      <td class="px-3 py-3"></td>
+                      <td class="px-3 py-3"></td>
+                      <td class="px-3 py-3 text-center text-yellow-100">{{ fightSubtotal('B') }}</td>
                     </tr>
 
                     <tr
@@ -1650,11 +2740,13 @@ onMounted(async () => {
                       </td>
                       <td class="px-3 py-2 text-center">
                         <input
-                          v-model="currentFieldValues[fightFieldKey(field, 'A')]"
-                          type="number"
-                          min="0"
-                          step="1"
+                          :value="currentFieldValues[fightFieldKey(field, 'A')]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="onIntegerFieldInput($event, fightFieldKey(field, 'A'))"
                         />
                       </td>
                       <td class="px-3 py-2 text-center">
@@ -1664,11 +2756,13 @@ onMounted(async () => {
                       <td class="px-3 py-2 text-center text-slate-200">x {{ Number(field.valor_unitario || 0) }}</td>
                       <td class="px-3 py-2 text-center">
                         <input
-                          v-model="currentFieldValues[fightFieldKey(field, 'B')]"
-                          type="number"
-                          min="0"
-                          step="1"
+                          :value="currentFieldValues[fightFieldKey(field, 'B')]"
+                          type="tel"
+                          inputmode="numeric"
+                          pattern="[0-9]*"
                           class="w-16 rounded-lg border-2 border-emerald-500 bg-transparent px-2 py-1 text-center font-bold text-white outline-none focus:ring-2 focus:ring-emerald-400/30"
+                          @beforeinput="blockNonNumericInput"
+                          @input="onIntegerFieldInput($event, fightFieldKey(field, 'B'))"
                         />
                       </td>
                       <td class="px-3 py-2 text-center">
@@ -1680,9 +2774,12 @@ onMounted(async () => {
                   </tbody>
                   <tfoot>
                     <tr class="border-t-4 border-red-600 bg-[#242424] text-base font-bold">
-                      <td colspan="2" class="px-3 py-4 text-center text-yellow-100">{{ fightTotal('A') }}</td>
-                      <td colspan="2" class="px-3 py-4 text-center uppercase tracking-wide text-white">Resultado final</td>
-                      <td colspan="2" class="px-3 py-4 text-center text-yellow-100">{{ fightTotal('B') }}</td>
+                      <td class="px-3 py-4 text-center text-yellow-100">{{ fightTotal('A') }}</td>
+                      <td class="px-3 py-4"></td>
+                      <td class="px-3 py-4 text-center uppercase tracking-wide text-white">Resultado final</td>
+                      <td class="px-3 py-4"></td>
+                      <td class="px-3 py-4"></td>
+                      <td class="px-3 py-4 text-center text-yellow-100">{{ fightTotal('B') }}</td>
                     </tr>
                   </tfoot>
                 </table>
@@ -1690,7 +2787,7 @@ onMounted(async () => {
             </div>
 
             <div
-              v-if="isGolesTemplate"
+              v-if="isMarcadorTemplate"
               class="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 text-white shadow-sm"
             >
               <div class="h-1.5 bg-blue-600"></div>
@@ -1709,7 +2806,7 @@ onMounted(async () => {
                       A
                     </div>
                     <p class="mt-3 truncate text-base font-semibold text-white">
-                      {{ scoreboardTeamA?.equipo_nombre || "Equipo A" }}
+                      {{ participantName(scoreboardTeamA, "Equipo A") }}
                     </p>
                     <p class="mt-1 truncate text-xs text-slate-400">
                       {{ scoreboardTeamA?.institucion || "Sin institucion" }}
@@ -1718,20 +2815,24 @@ onMounted(async () => {
 
                   <div class="flex items-center justify-center gap-2 sm:gap-4">
                     <input
-                      v-model="currentFieldValues[scoreFieldForSide('A')]"
-                      type="number"
-                      min="0"
-                      step="1"
+                      :value="currentFieldValues[scoreFieldForSide('A')]"
+                      type="tel"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
                       class="h-16 w-20 rounded-2xl border border-slate-700 bg-slate-900 text-center text-4xl font-bold text-white outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 sm:h-20 sm:w-24 sm:text-5xl"
+                      @beforeinput="blockNonNumericInput"
+                      @input="onIntegerFieldInput($event, scoreFieldForSide('A'))"
                     />
                     <span class="text-3xl font-bold text-slate-400 sm:text-5xl">-</span>
                     <input
-                      v-model="currentFieldValues[scoreFieldForSide('B')]"
-                      type="number"
-                      min="0"
-                      step="1"
+                      :value="currentFieldValues[scoreFieldForSide('B')]"
+                      type="tel"
+                      inputmode="numeric"
+                      pattern="[0-9]*"
                       :disabled="!scoreboardTeamB"
                       class="h-16 w-20 rounded-2xl border border-slate-700 bg-slate-900 text-center text-4xl font-bold text-white outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-400/30 disabled:opacity-40 sm:h-20 sm:w-24 sm:text-5xl"
+                      @beforeinput="blockNonNumericInput"
+                      @input="onIntegerFieldInput($event, scoreFieldForSide('B'))"
                     />
                   </div>
 
@@ -1740,7 +2841,7 @@ onMounted(async () => {
                       B
                     </div>
                     <p class="mt-3 truncate text-base font-semibold text-white">
-                      {{ scoreboardTeamB?.equipo_nombre || "Equipo B" }}
+                      {{ participantName(scoreboardTeamB, "Equipo B") }}
                     </p>
                     <p class="mt-1 truncate text-xs text-slate-400">
                       {{ scoreboardTeamB?.institucion || "Sin institucion" }}
@@ -1749,11 +2850,11 @@ onMounted(async () => {
                 </div>
 
                 <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <p v-if="getFieldError('goles_favor')" class="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                    {{ getFieldError("goles_favor") }}
+                  <p v-if="getFieldError('marcador_equipo_a')" class="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                    {{ getFieldError("marcador_equipo_a") }}
                   </p>
-                  <p v-if="getFieldError('goles_contra')" class="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                    {{ getFieldError("goles_contra") }}
+                  <p v-if="getFieldError('marcador_equipo_b')" class="rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
+                    {{ getFieldError("marcador_equipo_b") }}
                   </p>
                 </div>
               </div>
@@ -1798,7 +2899,7 @@ onMounted(async () => {
                     pattern="[0-9]*"
                     maxlength="6"
                     class="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-center text-sm font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
-                    placeholder="Digite solo numeros. Ej: 735 = 00h 07m 35s"
+                    placeholder="Digite solo números. Ej: 735 = 00h 07m 35s"
                     @beforeinput="blockNonNumericInput"
                     @input="onTimeDigitsInput"
                     @paste="onTimeDigitsPaste"
@@ -1814,8 +2915,8 @@ onMounted(async () => {
                   </div>
                 </div>
 
-                <p v-if="getFieldError('tiempo')" class="mt-3 rounded-xl bg-red-500/10 px-3 py-2 text-xs text-red-200">
-                  {{ getFieldError("tiempo") }}
+                <p v-if="currentFieldValues.sin_tiempo_valido || currentFieldValues.no_participa" class="mt-3 rounded-xl bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-100 ring-1 ring-amber-400/20">
+                  Este intento está marcado como Sin tiempo válido.
                 </p>
               </div>
             </div>
@@ -1852,13 +2953,48 @@ onMounted(async () => {
                   </option>
                 </select>
 
+                <label
+                  v-else-if="field.type === 'duration'"
+                  class="block cursor-text"
+                >
+                  <div class="rounded-xl border border-slate-900 bg-[#080808] px-3 py-2 text-white shadow-sm">
+                    <div class="flex items-end justify-center gap-2">
+                      <div class="flex items-end gap-1">
+                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).hours }}</span>
+                        <span class="-mb-0.5 text-sm font-black leading-none">h</span>
+                      </div>
+                      <div class="flex items-end gap-1">
+                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).minutes }}</span>
+                        <span class="-mb-0.5 text-sm font-black leading-none">m</span>
+                      </div>
+                      <div class="flex items-end gap-1">
+                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).seconds }}</span>
+                        <span class="-mb-0.5 text-sm font-black leading-none">s</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <input
+                    :value="durationDigitsFromValue(currentFieldValues[field.key])"
+                    type="tel"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="6"
+                    class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
+                    placeholder="Ej: 145 = 00h 01m 45s"
+                    @beforeinput="blockNonNumericInput"
+                    @input="onDurationDigitsInput($event, field.key)"
+                    @paste="onDurationDigitsPaste($event, field.key)"
+                  />
+                </label>
+
                 <input
                   v-else-if="field.type !== 'textarea' && !isBooleanField(field)"
                   v-model="currentFieldValues[field.key]"
                   :type="field.type === 'number' ? 'number' : 'text'"
                   :step="field.type === 'number' ? '0.001' : undefined"
                   class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :placeholder="field.type === 'duration' ? 'Ej: 12.345 o 01:12.500' : `Ingresa ${field.label.toLowerCase()}`"
+                  :placeholder="`Ingresa ${field.label.toLowerCase()}`"
                 />
 
                 <label
@@ -1917,14 +3053,28 @@ onMounted(async () => {
               />
             </div>
 
-            <div v-if="isRemoteMode && currentVersion > 0" class="space-y-1">
+            <div v-if="isRemoteMode && currentVersion > 0" class="space-y-2">
               <label class="block text-sm font-semibold text-slate-800">
                 Motivo del cambio
               </label>
-              <input
-                v-model="remoteForm.motivo_cambio"
+              <select
+                v-model="remoteForm.motivo_cambio_opcion"
                 class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Describe brevemente por qué estás actualizando esta evaluación"
+              >
+                <option value="">Selecciona un motivo</option>
+                <option
+                  v-for="option in changeReasonOptions"
+                  :key="option"
+                  :value="option"
+                >
+                  {{ option }}
+                </option>
+              </select>
+              <input
+                v-if="remoteForm.motivo_cambio_opcion === 'Otro'"
+                v-model="remoteForm.motivo_cambio_otro"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Escribe el motivo de corrección"
               />
               <p v-if="getTopLevelError('motivo_cambio')" class="mt-1 text-xs text-red-600">
                 {{ getTopLevelError("motivo_cambio") }}
@@ -1935,7 +3085,7 @@ onMounted(async () => {
               <button
                 type="button"
                 @click="registrarResultado"
-                :disabled="remoteSaving || (isRemoteMode && (!remoteSelectedTeamId || !hasCurrentSorteo))"
+                :disabled="remoteSaving || remoteEndingMatch || (isRemoteMode && (!remoteSelectedTeamId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration))"
                 class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <CheckCircleIcon class="h-5 w-5" />
@@ -1943,12 +3093,34 @@ onMounted(async () => {
               </button>
 
               <button
+                v-if="isRemoteMode && isTiempoTemplate"
+                type="button"
+                @click="abrirModalSinTiempoValido"
+                :disabled="remoteSaving || remoteEndingMatch || !remoteSelectedTeamId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration"
+                class="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Sin tiempo válido
+              </button>
+
+              <button
                 type="button"
                 @click="limpiarRegistro"
+                :disabled="remoteSaving || remoteEndingMatch"
                 class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:bg-slate-50"
               >
                 <XMarkIcon class="h-5 w-5 text-slate-700" />
                 Limpiar
+              </button>
+
+              <button
+                v-if="shouldShowFinishCurrentMatch"
+                type="button"
+                @click="terminarEncuentroRemoto"
+                :disabled="remoteSaving || remoteEndingMatch || !canFinishCurrentMatch || !canUseRemoteRegistration"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <CheckCircleIcon class="h-5 w-5" />
+                {{ remoteEndingMatch ? "Finalizando..." : "Terminar encuentro" }}
               </button>
             </div>
 
@@ -1961,14 +3133,193 @@ onMounted(async () => {
           </div>
         </div>
 
-        <div class="space-y-6">
-          <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-            <div class="mb-4 flex items-center gap-2">
-              <InformationCircleIcon class="h-5 w-5 text-slate-700" />
-              <h3 class="text-lg font-semibold text-slate-900">Resumen</h3>
+        <div class="h-full">
+          <div class="flex h-full flex-col rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+            <div class="mb-3 flex flex-col gap-3">
+              <div class="flex items-center justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <ClipboardDocumentListIcon class="h-5 w-5 text-blue-600" />
+                  <h3 class="text-lg font-semibold text-slate-900">Sorteo de la ronda</h3>
+                </div>
+
+                <span class="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
+                  {{ currentSorteo ? currentSorteoLabel : "Sorteo pendiente" }}
+                </span>
+              </div>
+
+              <div
+                v-if="isRemoteMode"
+                class="mx-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-slate-700"
+              >
+                <Squares2X2Icon class="h-4 w-4 text-blue-600" />
+                <span class="font-bold text-slate-900">{{ remoteTeamsCountLabel }}</span>
+              </div>
+
+              <button
+                v-if="isRemoteMode"
+                type="button"
+                @click="generarSorteoRemoto"
+                :disabled="remoteDrawGenerating || !canGenerateRemoteDraw"
+                class="mx-auto inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+                :class="currentSorteo ? 'border border-blue-200 bg-white text-blue-700 hover:bg-blue-50' : 'bg-blue-600 text-white hover:bg-blue-700'"
+              >
+                <SparklesIcon class="h-5 w-5" />
+                {{ remoteDrawButtonLabel }}
+              </button>
             </div>
 
-            <div class="space-y-3 text-sm text-slate-700">
+            <div
+              v-if="currentSorteo?.tipo_sorteo === 'enfrentamiento' && (sorteoGroups.length || sorteoDirectItems.length)"
+              class="space-y-4"
+            >
+              <div v-if="sorteoGroups.length" class="overflow-hidden rounded-xl border border-slate-200">
+                <div class="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  {{ sorteoDirectItems.length ? "Ronda previa" : "Llaves de enfrentamiento" }}
+                </div>
+                <div class="max-h-[36rem] overflow-y-auto">
+                  <table class="min-w-full text-sm">
+                    <thead class="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="w-20 px-3 py-2.5 font-semibold">Combate</th>
+                        <th class="px-3 py-2.5 font-semibold">Participante A</th>
+                        <th class="w-12 px-2 py-2.5 text-center font-semibold"></th>
+                        <th class="px-3 py-2.5 font-semibold">Participante B</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr
+                        v-for="group in sorteoGroups"
+                        :key="`resumen-grupo-${group.grupo}`"
+                        class="transition"
+                        :class="[
+                          isCurrentMatchGroup(group) ? 'bg-blue-50 ring-1 ring-inset ring-blue-200' : '',
+                          isSelectableMatchGroup(group) ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'
+                        ]"
+                        :title="isSelectableMatchGroup(group) ? '' : 'Debes registrar el participante actual según el orden del sorteo antes de avanzar.'"
+                        @click="selectRemoteTeamFromSummary(group.items.find((item) => item.lado === 'A') ?? group.items[0])"
+                      >
+                        <td class="px-3 py-3">
+                          <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                            {{ group.grupo }}
+                          </span>
+                        </td>
+                        <td class="px-3 py-3">
+                          <p class="font-semibold text-slate-900">
+                            {{ participantName((group.items.find((item) => item.lado === 'A') ?? group.items[0]), "-") }}
+                          </p>
+                          <p class="mt-0.5 text-xs text-slate-500">
+                            {{ (group.items.find((item) => item.lado === 'A') ?? group.items[0])?.institucion || "Sin institucion" }}
+                          </p>
+                        </td>
+                        <td class="px-2 py-3 text-center">
+                          <span class="inline-flex h-7 min-w-8 items-center justify-center rounded-lg bg-slate-800 px-2 text-[11px] font-bold uppercase tracking-wide text-white shadow-sm">
+                            VS
+                          </span>
+                        </td>
+                        <td class="px-3 py-3">
+                          <p
+                            class="font-semibold text-slate-900"
+                            :class="String(group.items.find((item) => item.lado === 'B')?.equipo_id) === String(remoteSelectedTeamId) ? 'text-blue-700' : ''"
+                          >
+                            {{ participantName(group.items.find((item) => item.lado === 'B'), "-") }}
+                          </p>
+                          <p class="mt-0.5 text-xs text-slate-500">
+                            {{ group.items.find((item) => item.lado === 'B')?.institucion || "Sin institucion" }}
+                          </p>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div v-if="sorteoDirectItems.length" class="overflow-hidden rounded-xl border border-emerald-200">
+                <div class="border-b border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                  Pasan directo
+                </div>
+                <div class="max-h-[26rem] overflow-y-auto">
+                  <table class="min-w-full text-sm">
+                    <thead class="sticky top-0 z-10 bg-white text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="w-16 px-3 py-2.5 font-semibold">Orden</th>
+                        <th class="px-3 py-2.5 font-semibold">Participante</th>
+                        <th class="px-3 py-2.5 font-semibold">Institución</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-emerald-50 bg-white">
+                      <tr v-for="item in sorteoDirectItems" :key="`directo-${item.inscripcion_id}`">
+                        <td class="px-3 py-3 font-semibold text-emerald-700">{{ item.orden }}</td>
+                        <td class="px-3 py-3 font-semibold text-slate-900">{{ participantName(item, "-") }}</td>
+                        <td class="px-3 py-3 text-slate-600">{{ item.institucion || "Sin institucion" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div v-else-if="sorteoOrdenItems.length" class="overflow-hidden rounded-xl border border-slate-200">
+              <div class="max-h-[42rem] overflow-y-auto">
+                <table class="min-w-full text-sm">
+                  <thead class="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th class="w-16 px-3 py-2.5 font-semibold">Orden</th>
+                      <th class="w-24 px-3 py-2.5 font-semibold">Intento</th>
+                      <th class="px-3 py-2.5 font-semibold">Participante</th>
+                      <th class="px-3 py-2.5 font-semibold">Institución</th>
+                      <th class="px-3 py-2.5 font-semibold">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 bg-white">
+                    <tr
+                      v-for="item in sorteoOrdenItems"
+                      :key="`resumen-sorteo-${item.orden}-${item.equipo_id}-${item.intento_numero || 1}`"
+                      class="transition"
+                      :class="[
+                        String(item.equipo_id) === String(remoteSelectedTeamId) && Number(item.intento_numero || 1) === Number(remoteSelectedAttemptNumber || 1) ? 'bg-blue-50' : '',
+                        item.is_selectable ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'
+                      ]"
+                      :title="item.is_selectable ? '' : 'Debes registrar el participante actual según el orden del sorteo antes de avanzar.'"
+                      @click="selectRemoteTeamFromSummary(item)"
+                    >
+                      <td class="px-3 py-3">
+                        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
+                          {{ item.orden }}
+                        </span>
+                      </td>
+                      <td class="px-3 py-3 font-semibold text-blue-700">
+                        {{ item.intento_label || `Intento ${item.intento_numero || 1}` }}
+                      </td>
+                      <td class="px-3 py-3 font-semibold text-slate-900">{{ item.participante }}</td>
+                      <td class="px-3 py-3 text-slate-600">{{ item.institucion }}</td>
+                      <td class="px-3 py-3 text-xs">
+                        <span
+                          v-if="item.evaluacion_completa"
+                          class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 font-semibold text-emerald-700 ring-1 ring-emerald-200"
+                        >
+                          Completo
+                        </span>
+                        <span
+                          v-else-if="item.resultado_id"
+                          class="inline-flex rounded-full bg-amber-50 px-2.5 py-1 font-semibold text-amber-700 ring-1 ring-amber-200"
+                        >
+                          Faltan {{ item.evaluaciones_pendientes }}
+                        </span>
+                        <span v-else class="inline-flex rounded-full bg-slate-50 px-2.5 py-1 font-semibold text-slate-500 ring-1 ring-slate-200">
+                          Pendiente
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-else class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+              Genera el sorteo para ver el orden de participación.
+            </div>
+
+            <div v-if="false" class="space-y-3 text-sm text-slate-700">
               <div class="flex items-center justify-between gap-4">
                 <span>Equipo actual</span>
                 <span class="font-semibold text-slate-900 text-right">{{ selectedTeamLabel }}</span>
@@ -1996,38 +3347,7 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div class="rounded-2xl bg-slate-900 p-5 text-white shadow-sm">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-sm font-semibold">Vista previa</p>
-                <p class="text-xs text-slate-300">
-                  {{ isRemoteMode ? "Basado en el mecanismo configurado" : "Basado en el formulario demo" }}
-                </p>
-              </div>
 
-              <ClockIcon class="h-6 w-6 text-slate-300" />
-            </div>
-
-            <div class="mt-4">
-              <p class="text-3xl font-bold leading-none">{{ scorePreview }}</p>
-              <p class="mt-2 text-xs uppercase tracking-wide text-slate-300">{{ currentUnitLabel }}</p>
-            </div>
-          </div>
-
-          <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
-            <div class="mb-4 flex items-center gap-2">
-              <TrophyIcon class="h-5 w-5 text-blue-600" />
-              <h3 class="text-lg font-semibold text-slate-900">Guía rápida</h3>
-            </div>
-
-            <ul class="space-y-2 text-sm text-slate-700">
-              <li>- Verifica categoría, ronda y equipo antes de guardar.</li>
-              <li>- Respeta el mecanismo configurado por categoría.</li>
-              <li v-if="isRemoteMode">- Si otra sesión modifica el registro, el sistema te pedirá recargar.</li>
-              <li v-if="isRemoteMode">- Cada guardado incrementa la versión y deja historial.</li>
-              <li v-else>- Este modo es solo demostrativo y no persiste datos reales.</li>
-            </ul>
-          </div>
         </div>
       </div>
     </template>

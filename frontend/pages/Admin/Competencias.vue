@@ -60,6 +60,10 @@ const imageInput = ref(null);
 const existingImageUrl = ref("");
 const imagePreviewUrl = ref("");
 const imageError = ref("");
+const logoInput = ref(null);
+const existingLogoUrl = ref("");
+const logoPreviewUrl = ref("");
+const logoError = ref("");
 
 const isCommitteeModalOpen = ref(false);
 const committeeCompetitionId = ref(null);
@@ -84,6 +88,7 @@ const form = useForm({
   enlace_evento: "",
   tipo_competencia: "",
   imagen: null,
+  logo: null,
   estado: false,
 });
 
@@ -131,6 +136,7 @@ const filteredCompetitions = computed(() => {
 });
 
 const previewImageUrl = computed(() => imagePreviewUrl.value || existingImageUrl.value || "");
+const previewLogoUrl = computed(() => logoPreviewUrl.value || existingLogoUrl.value || "");
 const committeePreviewPhotoUrl = computed(
   () => committeePhotoPreviewUrl.value || committeeExistingPhotoUrl.value || ""
 );
@@ -155,7 +161,8 @@ const isFormValid = computed(() => {
     !fechaErrors.value.inicio &&
     !fechaErrors.value.fin &&
     !enlaceError.value &&
-    !imageError.value;
+    !imageError.value &&
+    !logoError.value;
 
   return !!(camposRequeridos && sinErrores);
 });
@@ -166,7 +173,7 @@ const committeeEmailError = computed(() => {
   if (!correo) return "";
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(correo) ? "" : "Ingresa un correo valido. Ejemplo: nombre@dominio.com";
+  return emailRegex.test(correo) ? "" : "Ingresa un correo válido. Ejemplo: nombre@dominio.com";
 });
 
 const isCommitteeFormValid = computed(() => {
@@ -223,6 +230,13 @@ const revokePreviewUrl = () => {
   imagePreviewUrl.value = "";
 };
 
+const revokeLogoPreviewUrl = () => {
+  if (logoPreviewUrl.value?.startsWith("blob:")) {
+    URL.revokeObjectURL(logoPreviewUrl.value);
+  }
+  logoPreviewUrl.value = "";
+};
+
 const revokeCommitteePreviewUrl = () => {
   if (committeePhotoPreviewUrl.value?.startsWith("blob:")) {
     URL.revokeObjectURL(committeePhotoPreviewUrl.value);
@@ -236,11 +250,18 @@ const resetForm = () => {
   fechaErrors.value = { inicio: "", fin: "" };
   enlaceError.value = "";
   imageError.value = "";
+  logoError.value = "";
   existingImageUrl.value = "";
+  existingLogoUrl.value = "";
   revokePreviewUrl();
+  revokeLogoPreviewUrl();
 
   if (imageInput.value) {
     imageInput.value.value = "";
+  }
+
+  if (logoInput.value) {
+    logoInput.value.value = "";
   }
 };
 
@@ -275,6 +296,24 @@ const onImageChange = (event) => {
 
   form.imagen = file;
   imagePreviewUrl.value = URL.createObjectURL(file);
+};
+
+const onLogoChange = (event) => {
+  const file = event.target.files?.[0] || null;
+  logoError.value = "";
+  form.logo = null;
+  revokeLogoPreviewUrl();
+
+  if (!file) return;
+
+  if (!acceptedImageTypes.includes(file.type)) {
+    logoError.value = "Solo se permiten imágenes JPG, JPEG, PNG o WEBP.";
+    if (logoInput.value) logoInput.value.value = "";
+    return;
+  }
+
+  form.logo = file;
+  logoPreviewUrl.value = URL.createObjectURL(file);
 };
 
 const onCommitteePhotoChange = (event) => {
@@ -316,6 +355,7 @@ const openEditModal = (competition) => {
   form.tipo_competencia = competition?.tipo_competencia ?? "";
   form.estado = !!competition?.estado;
   existingImageUrl.value = competition?.imagen_url ?? "";
+  existingLogoUrl.value = competition?.logo_url ?? "";
 
   isModalOpen.value = true;
 };
@@ -379,6 +419,9 @@ const submitForm = () => {
     onError: (errors) => {
       if (errors?.imagen && !imageError.value) {
         imageError.value = errors.imagen;
+      }
+      if (errors?.logo && !logoError.value) {
+        logoError.value = errors.logo;
       }
     },
   };
@@ -482,6 +525,7 @@ onBeforeUnmount(() => {
   document.body.style.overflow = "";
   clearTimeout(feedbackTimer);
   revokePreviewUrl();
+  revokeLogoPreviewUrl();
   revokeCommitteePreviewUrl();
 });
 </script>
@@ -694,7 +738,7 @@ onBeforeUnmount(() => {
                 <input
                   v-model="form.enlace_evento"
                   type="url"
-                  placeholder="https://riotronic.espoch.edu.ec/2025"
+                  placeholder="https://riotronic.espoch.edu.ec/"
                   class="w-full rounded-2xl border bg-slate-50 px-3 py-2"
                 />
                 <p v-if="enlaceError" class="mt-1 text-xs text-red-600">
@@ -705,7 +749,7 @@ onBeforeUnmount(() => {
                 </p>
                 <p v-else class="mt-1 text-[11px] text-slate-400">
                   Ingresa la página oficial, formulario externo o landing del evento
-                  (ej. https://riotronic.espoch.edu.ec/2025).
+                  (ej. https://riotronic.espoch.edu.ec).
                 </p>
               </div>
 
@@ -780,6 +824,47 @@ onBeforeUnmount(() => {
                       <p class="text-xs text-slate-400">
                         La tarjeta mostrará un placeholder elegante.
                       </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <div>
+                  <label class="text-xs font-medium">Logo del evento</label>
+                  <input
+                    ref="logoInput"
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    class="block w-full text-sm text-slate-700 file:mr-4 file:rounded-xl file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:text-white hover:file:bg-slate-800"
+                    @change="onLogoChange"
+                  />
+                  <p class="mt-1 text-[11px] text-slate-400">
+                    Este logo se usará en el formato formal de reclamos.
+                  </p>
+                  <p v-if="logoError" class="mt-1 text-xs text-red-600">
+                    {{ logoError }}
+                  </p>
+                  <p v-else-if="form.errors.logo" class="mt-1 text-xs text-red-600">
+                    {{ form.errors.logo }}
+                  </p>
+                </div>
+
+                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                  <div v-if="previewLogoUrl" class="flex h-32 w-full items-center justify-center bg-white p-4">
+                    <img
+                      :src="previewLogoUrl"
+                      alt="Vista previa del logo"
+                      class="max-h-full max-w-full object-contain"
+                    />
+                  </div>
+                  <div
+                    v-else
+                    class="flex h-32 w-full items-center justify-center bg-slate-50"
+                  >
+                    <div class="text-center text-slate-500">
+                      <PhotoIcon class="mx-auto h-8 w-8 text-slate-400" />
+                      <p class="mt-2 text-sm font-medium">Sin logo seleccionado</p>
                     </div>
                   </div>
                 </div>
@@ -1042,7 +1127,7 @@ onBeforeUnmount(() => {
                     @click="resetCommitteeForm"
                     class="rounded-xl border px-4 py-2 text-sm text-slate-700 hover:bg-white"
                   >
-                    {{ committeeEditingId ? "Cancelar edicion" : "Limpiar" }}
+                    {{ committeeEditingId ? "Cancelar edición" : "Limpiar" }}
                   </button>
                   <button
                     type="button"

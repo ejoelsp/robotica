@@ -3,9 +3,10 @@ import { Link, router, usePage } from '@inertiajs/vue3'
 
 // ICONOS
 import {
-  Squares2X2Icon,
   BellAlertIcon,
   ClipboardDocumentListIcon,
+  DocumentCheckIcon,
+  DocumentTextIcon,
   PresentationChartBarIcon,
   UserCircleIcon,
   ArrowRightStartOnRectangleIcon,
@@ -64,20 +65,6 @@ const logout = () => {
 
       <!-- Menú principal -->
       <nav class="space-y-1 text-sm font-medium">
-        <!-- Dashboard -->
-        <Link
-          href="/dashboard"
-          :class="[
-            'flex items-center gap-3 px-3 py-2 rounded-xl',
-            page.url.startsWith('/dashboard')
-              ? 'bg-blue-600 text-white'
-              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
-          ]"
-        >
-          <Squares2X2Icon class="w-5 h-5" />
-          <span>Dashboard</span>
-        </Link>
-
         <!-- Mis Inscripciones -->
         <Link
           href="/competidor/mis-inscripciones"
@@ -94,8 +81,13 @@ const logout = () => {
 
         <!-- Notificaciones -->
         <Link
-          href="#"
-          class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50"
+          href="/competidor/notificaciones"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/competidor/notificaciones')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+          ]"
         >
           <BellAlertIcon class="w-5 h-5" />
           <span>Notificaciones</span>
@@ -103,11 +95,44 @@ const logout = () => {
 
         <!-- Resultados -->
         <Link
-          href="#"
-          class="flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:bg-slate-50"
+          href="/competidor/resultados"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/competidor/resultados')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+          ]"
         >
           <PresentationChartBarIcon class="w-5 h-5" />
           <span>Resultados</span>
+        </Link>
+
+        <!-- Certificados -->
+        <Link
+          href="/competidor/certificados"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/competidor/certificados')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+          ]"
+        >
+          <DocumentCheckIcon class="w-5 h-5" />
+          <span>Certificados</span>
+        </Link>
+
+        <!-- Reclamos -->
+        <Link
+          href="/competidor/reclamos"
+          :class="[
+            'flex items-center gap-3 px-3 py-2 rounded-xl',
+            page.url.startsWith('/competidor/reclamos')
+              ? 'bg-blue-600 text-white'
+              : 'text-slate-600 hover:bg-blue-50 hover:text-blue-700'
+          ]"
+        >
+          <DocumentTextIcon class="w-5 h-5" />
+          <span>Reclamos</span>
         </Link>
       </nav>
 

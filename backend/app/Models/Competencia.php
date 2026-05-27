@@ -8,6 +8,7 @@ use App\Models\Clasificacion;
 use App\Models\Categoria;
 use App\Models\ComiteOrganizador;
 use App\Models\Inscripcion;
+use App\Models\Temporada;
 
 class Competencia extends Model
 {
@@ -19,12 +20,14 @@ class Competencia extends Model
 
     protected $fillable = [
         'nombre',
+        'temporada_id',
         'descripcion',
         'fecha_inicio',
         'fecha_fin',
         'enlace_evento',
         'tipo_competencia',
         'imagen_url',
+        'logo_url',
         'estado',
     ];
 
@@ -37,6 +40,11 @@ class Competencia extends Model
     public function categorias()
     {
         return $this->hasMany(Categoria::class, 'competencia_id');
+    }
+
+    public function temporada()
+    {
+        return $this->belongsTo(Temporada::class, 'temporada_id');
     }
 
     public function inscripciones()

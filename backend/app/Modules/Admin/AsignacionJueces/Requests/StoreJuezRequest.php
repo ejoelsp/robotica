@@ -26,8 +26,8 @@ class StoreJuezRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'name' => ['required', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
+            'name' => ['required', 'string', 'max:100', 'regex:/^[\pL\s]+$/u'],
+            'last_name' => ['required', 'string', 'max:100', 'regex:/^[\pL\s]+$/u'],
             'email' => [
                 'required',
                 'string',
@@ -35,7 +35,7 @@ class StoreJuezRequest extends FormRequest
                 'max:150',
                 Rule::unique(User::class, 'email'),
             ],
-            'telefono' => ['required', 'string', 'max:20'],
+            'telefono' => ['required', 'string', 'regex:/^\+\d{1,14}$/', 'max:15'],
         ];
     }
 
@@ -43,11 +43,15 @@ class StoreJuezRequest extends FormRequest
     {
         return [
             'name.required' => 'El nombre es obligatorio.',
+            'name.regex' => 'El nombre solo puede contener letras y espacios.',
             'last_name.required' => 'El apellido es obligatorio.',
-            'email.required' => 'El correo es obligatorio.',
-            'email.email' => 'El correo no tiene un formato válido.',
+            'last_name.regex' => 'El apellido solo puede contener letras y espacios.',
+            'email.required' => 'El correo electrónico es obligatorio.',
+            'email.email' => 'El correo electrónico no tiene un formato válido.',
             'email.unique' => 'Ya existe un usuario con ese correo.',
             'telefono.required' => 'El teléfono es obligatorio.',
+            'telefono.regex' => 'El teléfono debe iniciar con + y contener solo números.',
+            'telefono.max' => 'El teléfono no puede superar 15 caracteres incluido el signo +.',
         ];
     }
 }

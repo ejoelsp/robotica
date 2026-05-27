@@ -1,9 +1,11 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline';
 
 const throttleError = ref('');
 const page = usePage();
+const mostrarPassword = ref(false);
 
 const form = useForm({
   email: '',
@@ -88,14 +90,26 @@ const onSubmit = () => {
           <label class="block text-sm font-medium text-slate-700 mb-1" for="password">
             Contraseña
           </label>
-          <input
-            v-model="form.password"
-            id="password"
-            type="password"
-            class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm
-                   focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            autocomplete="current-password"
-          />
+          <div class="relative">
+            <input
+              v-model="form.password"
+              id="password"
+              :type="mostrarPassword ? 'text' : 'password'"
+              class="w-full rounded-md border border-slate-300 px-3 py-2 pr-11 text-sm
+                     focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              autocomplete="current-password"
+            />
+            <button
+              type="button"
+              class="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-500 hover:text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+              :aria-label="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              :title="mostrarPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'"
+              @click="mostrarPassword = !mostrarPassword"
+            >
+              <EyeSlashIcon v-if="mostrarPassword" class="h-5 w-5" />
+              <EyeIcon v-else class="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <!-- Recordarme -->
@@ -109,12 +123,12 @@ const onSubmit = () => {
             <span>Recordarme</span>
           </label>
 
-          <button
-            type="button"
+          <Link
+            href="/recuperar-contrasena"
             class="text-xs text-blue-600 hover:underline"
           >
             ¿Olvidaste tu contraseña?
-          </button>
+          </Link>
         </div>
 
         <!-- Botón -->

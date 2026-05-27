@@ -26,6 +26,7 @@ class StoreCompetenciaRequest extends FormRequest
                 Rule::in(['Nacional', 'Internacional']),
             ],
             'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'logo' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'estado' => ['nullable', 'boolean'],
         ];
     }
@@ -43,6 +44,9 @@ class StoreCompetenciaRequest extends FormRequest
             'imagen.image' => 'El archivo seleccionado debe ser una imagen válida.',
             'imagen.mimes' => 'La imagen debe estar en formato JPG, JPEG, PNG o WEBP.',
             'imagen.max' => 'La imagen no debe superar los 5 MB.',
+            'logo.image' => 'El logo seleccionado debe ser una imagen válida.',
+            'logo.mimes' => 'El logo debe estar en formato JPG, JPEG, PNG o WEBP.',
+            'logo.max' => 'El logo no debe superar los 5 MB.',
         ];
     }
 

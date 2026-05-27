@@ -6,6 +6,7 @@ import path from "path";
 const backendPath = path.resolve(__dirname, "../backend");
 
 export default defineConfig({
+  envDir: backendPath,
   plugins: [
     vue(),
     laravel({

@@ -7,6 +7,7 @@ import {
   ArrowPathIcon,
   EyeIcon,
   ClockIcon,
+  XMarkIcon,
 } from "@heroicons/vue/24/outline";
 
 const props = defineProps({
@@ -28,8 +29,11 @@ const liveData = ref({
 });
 const liveLoading = ref(false);
 const liveConnected = ref(false);
+const liveConnectionMode = ref("WebSocket");
 const liveNotice = ref("");
+const selectedDetail = ref(null);
 let liveEventSource = null;
+let liveChannelName = null;
 
 const liveCategories = computed(() => {
   const seen = new Map();
@@ -86,13 +90,65 @@ function formatUpdatedAt(value) {
   });
 }
 
+function openDetail(scope, row) {
+  selectedDetail.value = {
+    scope,
+    row,
+    detail: row.detalle_publico ?? null,
+  };
+}
+
+function closeDetail() {
+  selectedDetail.value = null;
+}
+
+function formatNumber(value) {
+  const number = Number(value ?? 0);
+  return Number.isInteger(number) ? String(number) : number.toFixed(2);
+}
+
+function anonymousJudgeLabel(index) {
+  return `Juez ${Number(index) + 1}`;
+}
+
+function attemptForRow(row, numero) {
+  return (row.intentos ?? []).find((item) => Number(item.numero) === Number(numero)) ?? {
+    numero,
+    label: `Intento ${numero}`,
+    resultado_label: "Pendiente",
+    tiene_resultado: false,
+    es_mejor: false,
+  };
+}
+
 function closeLiveStream() {
   if (liveEventSource) {
     liveEventSource.close();
     liveEventSource = null;
   }
 
+  if (liveChannelName && window.Echo) {
+    window.Echo.leave(liveChannelName);
+    liveChannelName = null;
+  }
+
   liveConnected.value = false;
+}
+
+function shouldHandleLiveEvent(payload) {
+  if (Number(payload?.competencia_id) !== Number(selectedCompetition.value)) {
+    return false;
+  }
+
+  if (Number(selectedCategoryId.value) > 0 && Number(payload?.categoria_id) !== Number(selectedCategoryId.value)) {
+    return false;
+  }
+
+  if (Number(selectedRondaId.value) > 0 && Number(payload?.ronda_id) !== Number(selectedRondaId.value)) {
+    return false;
+  }
+
+  return true;
 }
 
 function syncFiltersFromPayload(payload) {
@@ -180,6 +236,26 @@ function connectLiveStream() {
     return;
   }
 
+  if (window.Echo) {
+    liveConnectionMode.value = "WebSocket";
+    liveChannelName = `resultados.competencia.${selectedCompetition.value}`;
+    window.Echo
+      .channel(liveChannelName)
+      .listen(".ResultadosActualizados", async (payload) => {
+        liveConnected.value = true;
+
+        if (!shouldHandleLiveEvent(payload)) {
+          return;
+        }
+
+        await loadSnapshot();
+      });
+    liveConnected.value = true;
+    return;
+  }
+
+  liveConnectionMode.value = "SSE";
+
   const params = new URLSearchParams({
     competencia_id: String(selectedCompetition.value),
   });
@@ -259,7 +335,7 @@ onBeforeUnmount(() => {
             class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold"
             :class="liveConnected ? 'bg-white text-emerald-700 ring-1 ring-emerald-200' : 'bg-white text-slate-700 ring-1 ring-slate-200'"
           >
-            {{ liveConnected ? "Conexión SSE activa" : "Reconectando SSE" }}
+            {{ liveConnected ? `${liveConnectionMode} activo` : `Reconectando ${liveConnectionMode}` }}
           </span>
 
           <Link
@@ -369,25 +445,104 @@ onBeforeUnmount(() => {
           <div class="overflow-x-auto">
             <table class="min-w-full text-sm">
               <thead class="bg-white">
-                <tr class="border-b border-slate-200 text-left text-black">
+                <tr v-if="scope.usa_enfrentamiento" class="border-b border-slate-200 text-left text-black">
+                  <th class="px-6 py-4 font-medium w-[120px]">Encuentro</th>
+                  <th class="px-6 py-4 font-medium">Equipo A</th>
+                  <th class="px-6 py-4 font-medium">Resultado</th>
+                  <th class="px-6 py-4 font-medium">Equipo B</th>
+                </tr>
+                <tr v-else-if="scope.usa_intentos" class="border-b border-slate-200 text-left text-black">
+                  <th class="px-6 py-4 font-medium w-[100px]">Orden</th>
+                  <th
+                    v-for="attempt in scope.intentos_headers"
+                    :key="`${scope.key}-head-attempt-${attempt.numero}`"
+                    class="px-6 py-4 font-medium min-w-[130px]"
+                  >
+                    {{ attempt.label }}
+                  </th>
+                  <th class="px-6 py-4 font-medium min-w-[220px]">Participante</th>
+                  <th class="px-6 py-4 font-medium min-w-[160px]">Institución</th>
+                </tr>
+                <tr v-else class="border-b border-slate-200 text-left text-black">
                   <th class="px-6 py-4 font-medium w-[110px]">Posición</th>
                   <th class="px-6 py-4 font-medium">Equipo</th>
                   <th class="px-6 py-4 font-medium">Institución</th>
                   <th class="px-6 py-4 font-medium">Resultado</th>
-                  <th class="px-6 py-4 font-medium">Puntaje</th>
                 </tr>
               </thead>
 
               <tbody class="divide-y divide-slate-200">
-                <tr v-for="row in scope.rows" :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`" class="hover:bg-slate-50/60">
+                <template v-if="scope.usa_enfrentamiento">
+                  <tr
+                    v-for="row in scope.rows"
+                    :key="`${scope.key}-match-${row.encuentro}`"
+                    class="cursor-pointer hover:bg-slate-50/60"
+                    @click="openDetail(scope, row)"
+                  >
+                    <td class="px-6 py-4 font-semibold text-slate-900">{{ row.encuentro }}</td>
+                    <td class="px-6 py-4">
+                      <p class="font-medium text-slate-900">{{ row.equipo_a }}</p>
+                      <p class="mt-1 text-xs text-slate-500">{{ row.institucion_a || "Sin institucion" }}</p>
+                    </td>
+                    <td class="px-6 py-4 font-semibold text-slate-900">{{ row.resultado_label }}</td>
+                    <td class="px-6 py-4">
+                      <p class="font-medium text-slate-900">{{ row.equipo_b }}</p>
+                      <p class="mt-1 text-xs text-slate-500">{{ row.institucion_b || "Sin institucion" }}</p>
+                    </td>
+                  </tr>
+                </template>
+                <template v-else-if="scope.usa_intentos">
+                  <tr
+                    v-for="row in scope.rows"
+                    :key="`${scope.key}-attempts-${row.posicion}-${row.equipo_id || row.equipo_nombre}`"
+                    class="cursor-pointer hover:bg-slate-50/60"
+                    @click="openDetail(scope, row)"
+                  >
+                    <td class="px-6 py-4">
+                      <span class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-blue-600 text-sm font-bold text-white">
+                        {{ row.posicion }}
+                      </span>
+                    </td>
+                    <td
+                      v-for="attempt in scope.intentos_headers"
+                      :key="`${scope.key}-${row.equipo_id || row.equipo_nombre}-attempt-${attempt.numero}`"
+                      class="px-6 py-4"
+                    >
+                      <div
+                        class="inline-flex min-h-[34px] items-center rounded-full px-3 py-1.5 text-sm font-semibold"
+                        :class="attemptForRow(row, attempt.numero).es_mejor
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                          : attemptForRow(row, attempt.numero).tiene_resultado
+                            ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-100'
+                            : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'"
+                      >
+                        {{ attemptForRow(row, attempt.numero).resultado_label }}
+                      </div>
+                    </td>
+                    <td class="px-6 py-4">
+                      <p class="font-semibold text-slate-900">{{ row.equipo_nombre }}</p>
+                      <p class="mt-1 text-xs text-slate-500">
+                        Mejor intento: {{ row.detalle_publico?.matriz_jueces ? attemptForRow(row, row.mejor_intento_numero).resultado_label : row.resultado_label }}
+                      </p>
+                    </td>
+                    <td class="px-6 py-4 text-slate-600">{{ row.institucion || "Sin institución" }}</td>
+                  </tr>
+                </template>
+                <template v-else>
+                  <tr
+                    v-for="row in scope.rows"
+                    :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`"
+                    class="cursor-pointer hover:bg-slate-50/60"
+                    @click="openDetail(scope, row)"
+                  >
                   <td class="px-6 py-4 font-semibold text-slate-900">{{ row.posicion }}°</td>
                   <td class="px-6 py-4">
                     <p class="font-medium text-slate-900">{{ row.equipo_nombre }}</p>
                   </td>
                   <td class="px-6 py-4 text-slate-600">{{ row.institucion || "Sin institución" }}</td>
                   <td class="px-6 py-4 text-slate-900">{{ row.resultado_label }}</td>
-                  <td class="px-6 py-4 text-slate-700">{{ row.puntaje_total ?? "-" }}</td>
-                </tr>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>
@@ -395,6 +550,194 @@ onBeforeUnmount(() => {
 
         <div v-if="!visibleScopes.length" class="rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500 shadow-sm">
           No hay scopes de resultados en vivo publicados para los filtros actuales.
+        </div>
+      </div>
+    </div>
+
+    <div v-if="selectedDetail" class="fixed inset-0 z-[10060] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-slate-950/50" @click="closeDetail"></div>
+
+      <div class="relative max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div class="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-4">
+          <div>
+            <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">
+              {{ selectedDetail.scope.categoria_nombre }} · {{ selectedDetail.scope.ronda_nombre }}
+            </p>
+            <h3 class="mt-1 text-xl font-bold text-slate-900">
+              {{ selectedDetail.detail?.titulo || "Detalle del resultado" }}
+            </h3>
+            <p class="mt-1 text-sm text-slate-500">
+              Resultado: <span class="font-semibold text-slate-900">{{ selectedDetail.row.resultado_label }}</span>
+            </p>
+          </div>
+
+          <button
+            type="button"
+            class="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+            @click="closeDetail"
+            aria-label="Cerrar detalle"
+          >
+            <XMarkIcon class="h-5 w-5" />
+          </button>
+        </div>
+
+        <div class="max-h-[72vh] overflow-y-auto p-5">
+          <div
+            v-if="selectedDetail.detail?.matriz_jueces"
+            class="mb-5 overflow-x-auto rounded-xl border border-slate-200"
+          >
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-left text-slate-600">
+                <tr>
+                  <th class="px-4 py-3">Juez</th>
+                  <th
+                    v-for="attempt in selectedDetail.detail.matriz_jueces.intentos"
+                    :key="`matrix-head-${attempt.numero}`"
+                    class="px-4 py-3"
+                  >
+                    {{ attempt.label }}
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-200">
+                <tr
+                  v-for="(judge, judgeIndex) in selectedDetail.detail.matriz_jueces.jueces"
+                  :key="`matrix-judge-${judge.juez_user_id}`"
+                >
+                  <td class="px-4 py-3 font-medium text-slate-900">{{ anonymousJudgeLabel(judgeIndex) }}</td>
+                  <td
+                    v-for="attempt in judge.intentos"
+                    :key="`matrix-judge-${judge.juez_user_id}-${attempt.numero}`"
+                    class="px-4 py-3 text-slate-700"
+                  >
+                    {{ attempt.label || "-" }}
+                  </td>
+                </tr>
+                <tr class="bg-blue-50 font-bold text-blue-800">
+                  <td class="px-4 py-3">Promedio</td>
+                  <td
+                    v-for="attempt in selectedDetail.detail.matriz_jueces.promedios"
+                    :key="`matrix-average-${attempt.numero}`"
+                    class="px-4 py-3"
+                  >
+                    {{ attempt.label || "-" }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <template v-else-if="selectedDetail.detail?.tipo === 'tabla_enfrentamiento_criterios'">
+            <div class="mb-4 grid grid-cols-3 gap-3 rounded-2xl bg-slate-50 p-4 text-center">
+              <div>
+                <p class="text-xs text-slate-500">{{ selectedDetail.detail.equipo_a }}</p>
+                <p class="text-2xl font-black text-slate-900">{{ formatNumber(selectedDetail.detail.total_a) }}</p>
+              </div>
+              <div class="flex items-center justify-center text-lg font-bold text-slate-400">VS</div>
+              <div>
+                <p class="text-xs text-slate-500">{{ selectedDetail.detail.equipo_b }}</p>
+                <p class="text-2xl font-black text-slate-900">{{ formatNumber(selectedDetail.detail.total_b) }}</p>
+              </div>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-center text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3 font-semibold">Puntaje</th>
+                    <th class="px-4 py-3 font-semibold">Cantidad</th>
+                    <th class="px-4 py-3 font-semibold text-left">Criterio</th>
+                    <th class="px-4 py-3 font-semibold">Valor</th>
+                    <th class="px-4 py-3 font-semibold">Cantidad</th>
+                    <th class="px-4 py-3 font-semibold">Puntaje</th>
+                  </tr>
+                </thead>
+
+                <tbody class="divide-y divide-slate-200 text-center">
+                  <tr
+                    v-for="item in selectedDetail.detail.criterios"
+                    :key="item.criterio"
+                    class="hover:bg-slate-50"
+                  >
+                    <td class="px-4 py-3 font-medium text-slate-700">
+                      {{ formatNumber(item.puntaje_a) }}
+                    </td>
+
+                    <td class="px-4 py-3 text-slate-700">
+                      {{ formatNumber(item.cantidad_a) }}
+                    </td>
+
+                    <td
+                      class="px-4 py-3 text-left font-semibold"
+                      :class="item.es_penalizacion ? 'text-red-600' : 'text-slate-900'"
+                    >
+                      {{ item.criterio }}
+                    </td>
+
+                    <td class="px-4 py-3 text-slate-700">
+                      x {{ formatNumber(item.valor_unitario) }}
+                    </td>
+
+                    <td class="px-4 py-3 text-slate-700">
+                      {{ formatNumber(item.cantidad_b) }}
+                    </td>
+
+                    <td class="px-4 py-3 font-medium text-slate-700">
+                      {{ formatNumber(item.puntaje_b) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <template v-else-if="['tabla_individual_criterios', 'tabla_individual_puntaje_maximo'].includes(selectedDetail.detail?.tipo)">
+            <div class="overflow-x-auto rounded-xl border border-slate-200">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th class="px-4 py-3">Criterio</th>
+                    <th class="px-4 py-3">{{ selectedDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? 'Maximo' : 'Cantidad' }}</th>
+                    <th class="px-4 py-3">{{ selectedDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? 'Otorgado' : 'Valor' }}</th>
+                    <th class="px-4 py-3">Puntaje</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-200">
+                  <tr v-for="item in selectedDetail.detail.criterios" :key="item.criterio">
+                    <td class="px-4 py-3 font-medium" :class="item.es_penalizacion ? 'text-red-600' : 'text-slate-900'">{{ item.criterio }}</td>
+                    <td class="px-4 py-3">{{ formatNumber(selectedDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? item.puntaje_maximo : item.cantidad) }}</td>
+                    <td class="px-4 py-3">{{ selectedDetail.detail?.tipo === 'tabla_individual_puntaje_maximo' ? formatNumber(item.puntaje) : `x ${formatNumber(item.valor_unitario)}` }}</td>
+                    <td class="px-4 py-3">{{ formatNumber(item.puntaje) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-4 grid gap-3 sm:grid-cols-3">
+              <div class="rounded-xl bg-slate-50 p-4"><p class="text-xs text-slate-500">Subtotal</p><p class="text-lg font-bold">{{ formatNumber(selectedDetail.detail.subtotal) }}</p></div>
+              <div class="rounded-xl bg-red-50 p-4"><p class="text-xs text-red-500">Penalizaciones</p><p class="text-lg font-bold text-red-700">{{ formatNumber(selectedDetail.detail.penalizaciones) }}</p></div>
+              <div class="rounded-xl bg-blue-50 p-4"><p class="text-xs text-blue-500">Resultado final</p><p class="text-lg font-bold text-blue-700">{{ formatNumber(selectedDetail.detail.total) }}</p></div>
+            </div>
+          </template>
+
+          <template v-else-if="selectedDetail.detail?.tipo === 'marcador'">
+            <div class="rounded-2xl bg-slate-950 p-6 text-center text-white">
+              <p class="text-sm text-slate-300">Marcador final</p>
+              <p class="mt-2 text-5xl font-black">{{ selectedDetail.detail.marcador_a }} - {{ selectedDetail.detail.marcador_b }}</p>
+            </div>
+          </template>
+
+          <template v-else-if="selectedDetail.detail?.tipo === 'tiempo'">
+            <div class="flex justify-center">
+              <div class="w-full max-w-md rounded-2xl bg-slate-50 p-6 text-center">
+                <p class="text-sm font-medium text-slate-500">Tiempo</p>
+                <p class="mt-2 text-4xl font-black text-slate-900">{{ selectedDetail.detail.tiempo_label }}</p>
+              </div>
+            </div>
+          </template>
+
+          <div v-else class="rounded-xl bg-slate-50 p-5 text-sm text-slate-600">
+            No hay detalle adicional para este resultado.
+          </div>
         </div>
       </div>
     </div>

@@ -3,8 +3,10 @@
 namespace App\Modules\Admin\Inscripciones\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\ConfiguracionPago;
 use App\Models\Inscripcion;
 use App\Modules\Admin\Inscripciones\Requests\RejectComprobanteRequest;
+use App\Modules\Admin\Notificaciones\Services\NotificacionService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -134,7 +136,25 @@ class AdminInscripcionController extends Controller
             'inscriptions' => $inscriptions,
             'stats' => $stats,
             'pendingPayments' => $pendingPayments,
+            'configuracionPago' => $this->configuracionPagoActiva(),
         ]);
+    }
+
+    public function guardarConfiguracionPago(Request $request)
+    {
+        $data = $request->validate([
+            'informacion_pago' => ['required', 'string', 'max:5000'],
+        ], [
+            'informacion_pago.required' => 'Ingresa los datos de pago que verá el competidor.',
+            'informacion_pago.max' => 'Los datos de pago no pueden superar los 5000 caracteres.',
+        ]);
+
+        ConfiguracionPago::query()->updateOrCreate(
+            ['activo' => true],
+            ['informacion_pago' => trim($data['informacion_pago'])]
+        );
+
+        return back()->with('success', 'Datos de pago actualizados correctamente.');
     }
 
     public function approve(int $id)
@@ -145,8 +165,11 @@ class AdminInscripcionController extends Controller
             return back()->with('error', 'No se puede aprobar: no hay comprobante en revision.');
         }
 
-        DB::transaction(function () use ($inscripcion) {
-            $this->paymentBatchQuery($inscripcion)->get()->each(function ($item) {
+        $aprobadas = $this->paymentBatchQuery($inscripcion)->get();
+        $aprobadasIds = $aprobadas->pluck('id')->all();
+
+        DB::transaction(function () use ($aprobadas) {
+            $aprobadas->each(function ($item) {
                 $item->update([
                     'estado' => 'confirmado',
                     'estado_comprobante' => 'aprobado',
@@ -157,6 +180,15 @@ class AdminInscripcionController extends Controller
                 ]);
             });
         });
+
+        $notificacionService = app(NotificacionService::class);
+        $actor = auth()->user();
+
+        Inscripcion::query()
+            ->with(['usuarioRegistro:id,name,last_name,email', 'competencia:id,nombre', 'categoria:id,nombre', 'equipo:id,nombre'])
+            ->whereIn('id', $aprobadasIds)
+            ->get()
+            ->each(fn (Inscripcion $item) => $notificacionService->notificarInscripcionAprobada($item, $actor));
 
         return back()->with('success', 'Comprobante aprobado correctamente.');
     }
@@ -169,8 +201,11 @@ class AdminInscripcionController extends Controller
             return back()->with('error', 'No se puede rechazar: no hay comprobante en revision.');
         }
 
-        DB::transaction(function () use ($inscripcion, $request) {
-            $this->paymentBatchQuery($inscripcion)->get()->each(function ($item) use ($request) {
+        $rechazadas = $this->paymentBatchQuery($inscripcion)->get();
+        $rechazadasIds = $rechazadas->pluck('id')->all();
+
+        DB::transaction(function () use ($rechazadas, $request) {
+            $rechazadas->each(function ($item) use ($request) {
                 $item->update([
                     'estado' => 'pendiente_pago',
                     'estado_comprobante' => 'rechazado',
@@ -181,6 +216,15 @@ class AdminInscripcionController extends Controller
                 ]);
             });
         });
+
+        $notificacionService = app(NotificacionService::class);
+        $actor = auth()->user();
+
+        Inscripcion::query()
+            ->with(['usuarioRegistro:id,name,last_name,email', 'competencia:id,nombre', 'categoria:id,nombre', 'equipo:id,nombre'])
+            ->whereIn('id', $rechazadasIds)
+            ->get()
+            ->each(fn (Inscripcion $item) => $notificacionService->notificarInscripcionRechazada($item, $actor));
 
         return back()->with('success', 'Comprobante rechazado correctamente.');
     }
@@ -374,5 +418,18 @@ class AdminInscripcionController extends Controller
             ->when($timestamp, function (Builder $query) use ($timestamp) {
                 $query->whereRaw("to_char(fecha_subida_comprobante, 'YYYY-MM-DD HH24:MI:SS') = ?", [$timestamp]);
             });
+    }
+
+    protected function configuracionPagoActiva(): ?array
+    {
+        $configuracion = ConfiguracionPago::query()
+            ->where('activo', true)
+            ->latest('updated_at')
+            ->first();
+
+        return $configuracion ? [
+            'id' => $configuracion->id,
+            'informacion_pago' => $configuracion->informacion_pago,
+        ] : null;
     }
 }

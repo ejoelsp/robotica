@@ -3,12 +3,11 @@
 namespace App\Modules\Admin\Resultados\Http\Controllers;
 
 use App\Services\ClasificacionConsolidacionService;
+use App\Services\EvaluacionJuezService;
 use App\Http\Controllers\Controller;
 use App\Models\Resultado;
-use App\Models\ResultadoHist;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use Illuminate\Http\JsonResponse;
@@ -16,7 +15,8 @@ use Illuminate\Http\JsonResponse;
 class ResultadoController extends Controller
 {
     public function __construct(
-        private readonly ClasificacionConsolidacionService $service
+        private readonly ClasificacionConsolidacionService $service,
+        private readonly EvaluacionJuezService $evaluacionService
     ) {
     }
 
@@ -54,10 +54,10 @@ class ResultadoController extends Controller
                 'mc.nombre as mecanismo_nombre',
                 'r.id as ronda_id',
                 'r.nombre as ronda_nombre',
-                'r.fecha_hora as ronda_fecha_hora'
+                'r.orden as ronda_orden'
             )
             ->orderBy('c.nombre')
-            ->orderBy('r.fecha_hora')
+            ->orderBy('r.orden')
             ->get()
             ->groupBy('id')
             ->map(function ($rows) {
@@ -78,7 +78,7 @@ class ResultadoController extends Controller
                         ->map(fn ($row) => [
                             'id' => (int) $row->ronda_id,
                             'nombre' => (string) $row->ronda_nombre,
-                            'fecha_hora' => $row->ronda_fecha_hora,
+                            'orden' => (int) ($row->ronda_orden ?? 1),
                         ])
                         ->values()
                         ->all(),
@@ -209,57 +209,30 @@ class ResultadoController extends Controller
         );
     }
 
-    public function cambiarEstadoEvaluacion(Request $request, int $resultadoId): JsonResponse
+    public function actualizarEvaluacion(Request $request, int $resultadoId): JsonResponse
     {
         $validated = $request->validate([
-            'estado' => ['required', 'string', 'in:registrado,anulado'],
-            'motivo_cambio' => ['nullable', 'string', 'max:255'],
+            'payload' => ['required', 'array'],
+            'observaciones' => ['nullable', 'string'],
+            'motivo_cambio' => ['required', 'string', 'max:255'],
+        ], [
+            'motivo_cambio.required' => 'Ingresa el motivo de correccion.',
+            'payload.required' => 'No se recibieron los campos del resultado.',
         ]);
 
         $resultado = Resultado::query()
-            ->with(['categoria.configCalificacion.mecanismo', 'equipo:id,nombre,institucion', 'juez:id,name,last_name,email'])
+            ->with(['categoria.configCalificacion.mecanismo'])
             ->findOrFail($resultadoId);
 
-        if ((string) $resultado->estado === (string) $validated['estado']) {
-            throw ValidationException::withMessages([
-                'estado' => 'La evaluacion ya tiene ese estado.',
-            ]);
-        }
-
-        $estadoAnterior = (string) $resultado->estado;
-        $versionAnterior = (int) $resultado->version;
-
-        DB::transaction(function () use ($resultado, $validated, $request, $estadoAnterior, $versionAnterior) {
-            $resultado->estado = (string) $validated['estado'];
-            $resultado->version = $versionAnterior + 1;
-            $resultado->save();
-
-            ResultadoHist::create([
-                'resultado_id' => $resultado->id,
-                'version' => $resultado->version,
-                'version_anterior' => $versionAnterior,
-                'version_nueva' => $resultado->version,
-                'puntaje_old' => $resultado->puntaje,
-                'puntaje_new' => $resultado->puntaje,
-                'tiempo_old' => $resultado->tiempo,
-                'tiempo_new' => $resultado->tiempo,
-                'penal_old' => $resultado->penalizaciones,
-                'penal_new' => $resultado->penalizaciones,
-                'estado_old' => $estadoAnterior,
-                'estado_new' => $resultado->estado,
-                'payload_old' => $resultado->payload_json,
-                'payload_new' => $resultado->payload_json,
-                'motivo_cambio' => $validated['motivo_cambio'] ?? null,
-                'editado_por' => $request->user()->id,
-                'editado_en' => now(),
-            ]);
-        });
+        $actualizado = $this->evaluacionService->corregirEvaluacionAdministrativa(
+            $request->user(),
+            $resultado,
+            $validated
+        );
 
         return response()->json([
-            'message' => $resultado->estado === 'anulado'
-                ? 'Evaluacion anulada correctamente.'
-                : 'Evaluacion restaurada correctamente.',
-            'resultado' => $this->serializarEvaluacion($resultado->fresh([
+            'message' => 'Evaluacion corregida correctamente.',
+            'resultado' => $this->serializarEvaluacion($actualizado->fresh([
                 'categoria.configCalificacion.mecanismo',
                 'competencia:id,nombre',
                 'equipo:id,nombre,institucion',
@@ -274,8 +247,10 @@ class ResultadoController extends Controller
     {
         $config = $resultado->categoria?->configCalificacion;
         $mecanismo = (string) ($config?->mecanismo?->codigo ?? '');
-        $campos = collect($config?->campos_json ?? []);
+        $camposEditables = $config ? $this->evaluacionService->normalizarCampos($config) : [];
+        $campos = collect($camposEditables);
         $payload = is_array($resultado->payload_json) ? $resultado->payload_json : [];
+        $plantillaResultado = $config ? $this->plantillaResultado($config) : null;
 
         return [
             'id' => (int) $resultado->id,
@@ -300,6 +275,8 @@ class ResultadoController extends Controller
             'resultado_label' => $this->formatearResultadoEvaluacion($resultado, $mecanismo, (string) ($config?->unidad_resultado ?? '')),
             'mecanismo_codigo' => $mecanismo,
             'mecanismo_nombre' => (string) ($config?->mecanismo?->nombre ?? 'Sin mecanismo'),
+            'plantilla_resultado' => $plantillaResultado,
+            'plantilla_nombre' => $this->nombrePlantillaResultado($plantillaResultado, (string) ($config?->mecanismo?->nombre ?? 'Sin mecanismo')),
             'payload_resumen' => $campos
                 ->map(function (array $campo) use ($payload) {
                     $key = (string) ($campo['key'] ?? '');
@@ -312,10 +289,47 @@ class ResultadoController extends Controller
                 })
                 ->filter(fn (array $item) => $item['key'] !== '' && $item['value'] !== null && $item['value'] !== '')
                 ->values(),
+            'campos_edicion' => $camposEditables,
+            'payload_actual' => $payload,
             'observaciones' => $resultado->observaciones,
             'updated_at' => optional($resultado->updated_at)?->toIso8601String(),
             'created_at' => optional($resultado->created_at)?->toIso8601String(),
         ];
+    }
+
+    private function plantillaResultado($config): ?string
+    {
+        $reglas = is_array($config->reglas_json ?? null)
+            ? (array) ($config->reglas_json['registro'] ?? [])
+            : [];
+
+        if (($reglas['plantilla_resultado'] ?? null)) {
+            return (string) $reglas['plantilla_resultado'];
+        }
+
+        $campos = collect($config->campos_json ?? []);
+
+        if ($campos->contains(fn ($campo) => ($campo['key'] ?? null) === 'tiempo' && ($campo['type'] ?? null) === 'duration')) {
+            return 'tiempo';
+        }
+
+        if ($campos->contains(fn ($campo) => ($campo['key'] ?? null) === 'marcador_equipo_a')) {
+            return 'marcador';
+        }
+
+        return null;
+    }
+
+    private function nombrePlantillaResultado(?string $plantilla, string $fallback): string
+    {
+        return match ($plantilla) {
+            'marcador' => 'Marcador',
+            'tiempo' => 'Tiempo',
+            'tabla_enfrentamiento_criterios' => 'Tabla de enfrentamiento por criterios',
+            'tabla_individual_criterios' => 'Tabla individual por criterios',
+            'tabla_individual_puntaje_maximo' => 'Tabla de puntaje máximo',
+            default => $fallback,
+        };
     }
 
     private function formatearPayloadValue(mixed $value, string $type): ?string
@@ -341,21 +355,23 @@ class ResultadoController extends Controller
         $payload = is_array($resultado->payload_json) ? $resultado->payload_json : [];
 
         return match ($mecanismo) {
-            'registro_resultado' => ($payload['resultado'] ?? null)
-                ? ucfirst((string) $payload['resultado']) . ($resultado->valor_secundario !== null ? ' / ' . number_format((float) $resultado->valor_secundario, 0) . ' pts' : '')
-                : ($resultado->valor_principal !== null ? number_format((float) $resultado->valor_principal, 3) . $suffix : 'Sin resultado'),
+            'registro_resultado' => isset($payload['tiempo'])
+                ? $this->formatearTiempoDesdeSegundos($resultado->tiempo ?? $payload['tiempo'])
+                : (($payload['resultado'] ?? null)
+                    ? ucfirst((string) $payload['resultado']) . ($resultado->valor_secundario !== null ? ' / ' . number_format((float) $resultado->valor_secundario, 0) . ' pts' : '')
+                    : ($resultado->valor_principal !== null ? number_format((float) $resultado->valor_principal, 3) . $suffix : 'Sin resultado')),
             'tabla_evaluacion' => $resultado->valor_principal !== null
                 ? number_format((float) $resultado->valor_principal, 2) . $suffix
                 : 'Sin puntaje',
             'cronometro', 'dron_carrera' => $resultado->valor_principal !== null
-                ? number_format((float) $resultado->valor_principal, 3) . $suffix
+                ? $this->formatearTiempoDesdeSegundos($resultado->tiempo ?? $resultado->valor_principal)
                 : 'Sin tiempo',
             'puntaje', 'puntaje_jueces', 'mixto', 'dron_destreza' => $resultado->valor_principal !== null
                 ? number_format((float) $resultado->valor_principal, 2) . $suffix
                 : 'Sin puntaje',
-            'soccer_goles' => isset($payload['goles_favor'], $payload['goles_contra'])
-                ? (int) $payload['goles_favor'] . ' - ' . (int) $payload['goles_contra']
-                : ($resultado->valor_principal !== null ? number_format((float) $resultado->valor_principal, 0) . ' dif.' : 'Sin marcador'),
+            'soccer_goles' => isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])
+                ? 'Equipo A ' . (int) $payload['marcador_equipo_a'] . ' - ' . (int) $payload['marcador_equipo_b'] . ' Equipo B'
+                : 'Sin marcador',
             'combate_llaves' => ($payload['resultado'] ?? null)
                 ? ucfirst((string) $payload['resultado']) . ($resultado->valor_secundario !== null ? ' / ' . number_format((float) $resultado->valor_secundario, 0) . ' pts' : '')
                 : 'Sin resultado',
@@ -369,5 +385,19 @@ class ResultadoController extends Controller
                 ? number_format((float) $resultado->valor_principal, 3) . $suffix
                 : 'Sin resultado',
         };
+    }
+
+    private function formatearTiempoDesdeSegundos(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return 'Sin tiempo';
+        }
+
+        $totalSeconds = max(0, (int) floor((float) $value));
+        $hours = intdiv($totalSeconds, 3600);
+        $minutes = intdiv($totalSeconds % 3600, 60);
+        $seconds = $totalSeconds % 60;
+
+        return sprintf('%02dh %02dm %02ds', $hours, $minutes, $seconds);
     }
 }

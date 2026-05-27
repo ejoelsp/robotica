@@ -75,7 +75,7 @@ return new class extends Migration
                 ) THEN
                     ALTER TABLE catalogo.sorteo_detalles
                     ADD CONSTRAINT sorteo_detalles_estado_check
-                    CHECK (estado IN ('pendiente', 'bye', 'completado'));
+                    CHECK (estado IN ('pendiente', 'directo', 'completado'));
                 END IF;
 
                 IF NOT EXISTS (
@@ -83,7 +83,7 @@ return new class extends Migration
                 ) THEN
                     ALTER TABLE catalogo.sorteo_detalles
                     ADD CONSTRAINT sorteo_detalles_lado_check
-                    CHECK (lado IS NULL OR lado IN ('A', 'B', 'BYE'));
+                    CHECK (lado IS NULL OR lado IN ('A', 'B'));
                 END IF;
 
                 IF NOT EXISTS (
