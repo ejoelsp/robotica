@@ -6,11 +6,15 @@ use App\Http\Controllers\Controller;
 use App\Services\ClasificacionConsolidacionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class LiveResultadosController extends Controller
 {
+    private const VIEWER_TTL_SECONDS = 90;
+    private const VIEWER_KEY_PREFIX = 'live_viewers';
+
     public function __construct(
         private readonly ClasificacionConsolidacionService $service
     ) {
@@ -35,6 +39,29 @@ class LiveResultadosController extends Controller
                 'public'
             )
         );
+    }
+
+    public function heartbeat(Request $request): JsonResponse
+    {
+        $request->validate([
+            'competencia_id' => ['nullable', 'integer', 'min:1'],
+            'viewer_id' => ['required', 'string', 'max:120'],
+        ]);
+
+        $competenciaId = $this->resolveCompetenciaId($request);
+        $viewerId = trim((string) $request->string('viewer_id'));
+
+        Cache::put(
+            $this->viewerCacheKey($competenciaId, $viewerId),
+            now()->toIso8601String(),
+            now()->addSeconds(self::VIEWER_TTL_SECONDS)
+        );
+
+        return response()->json([
+            'ok' => true,
+            'competencia_id' => $competenciaId,
+            'viewers_count' => $this->countActiveViewers($competenciaId),
+        ]);
     }
 
     public function stream(Request $request): StreamedResponse
@@ -201,13 +228,41 @@ class LiveResultadosController extends Controller
 
     private function appendStreamMeta(array $payload): array
     {
+        $competenciaId = (int) ($payload['competition_id'] ?? 0);
+
         $payload['stream'] = [
             'mode' => 'short_sse',
             'retry_ms' => (int) config('resultados_live.sse.retry_ms', 5000),
             'heartbeat_ms' => (int) config('resultados_live.sse.heartbeat_ms', 3000),
             'iterations' => (int) config('resultados_live.sse.iterations', 20),
+            'viewers_count' => $competenciaId > 0 ? $this->countActiveViewers($competenciaId) : 0,
         ];
 
         return $payload;
+    }
+
+    private function viewerCacheKey(int $competenciaId, string $viewerId): string
+    {
+        return self::VIEWER_KEY_PREFIX . ':' . $competenciaId . ':' . sha1($viewerId);
+    }
+
+    private function countActiveViewers(int $competenciaId): int
+    {
+        if ($competenciaId <= 0) {
+            return 0;
+        }
+
+        if (config('cache.default') !== 'database') {
+            return 0;
+        }
+
+        $table = (string) config('cache.stores.database.table', 'cache');
+        $prefix = (string) config('cache.prefix', '');
+        $likePattern = $prefix . self::VIEWER_KEY_PREFIX . ':' . $competenciaId . ':%';
+
+        return (int) DB::table($table)
+            ->where('key', 'like', $likePattern)
+            ->where('expiration', '>=', now()->timestamp)
+            ->count();
     }
 }

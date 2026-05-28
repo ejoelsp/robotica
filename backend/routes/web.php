@@ -134,6 +134,8 @@ Route::get('/resultados/en-vivo', [LiveResultadosController::class, 'snapshot'])
     ->name('public.resultados.live');
 Route::get('/resultados/en-vivo/stream', [LiveResultadosController::class, 'stream'])
     ->name('public.resultados.live.stream');
+Route::post('/resultados/en-vivo/heartbeat', [LiveResultadosController::class, 'heartbeat'])
+    ->name('public.resultados.live.heartbeat');
 
 // Pantallas de autenticación
 Route::get('/login', function () {
