@@ -34,6 +34,10 @@ const liveNotice = ref("");
 const selectedDetail = ref(null);
 let liveEventSource = null;
 let liveChannelName = null;
+let liveHeartbeatTimer = null;
+
+const viewerStorageKey = "live_results_viewer_id";
+const viewerId = ref("");
 
 const liveCategories = computed(() => {
   const seen = new Map();
@@ -62,6 +66,20 @@ const liveRondas = computed(() => {
     .filter((item, index, array) => {
       return array.findIndex((candidate) => Number(candidate.id) === Number(item.id)) === index;
     });
+});
+
+const liveViewers = computed(() => {
+  const metaViewers = Number(liveData.value?.meta?.viewers_count);
+  if (Number.isFinite(metaViewers) && metaViewers >= 0) {
+    return metaViewers;
+  }
+
+  const streamViewers = Number(liveData.value?.stream?.viewers_count);
+  if (Number.isFinite(streamViewers) && streamViewers >= 0) {
+    return streamViewers;
+  }
+
+  return null;
 });
 
 const visibleScopes = computed(() => {
@@ -133,6 +151,65 @@ function closeLiveStream() {
   }
 
   liveConnected.value = false;
+}
+
+function resolveViewerId() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  try {
+    const current = window.localStorage.getItem(viewerStorageKey);
+    if (current) {
+      return current;
+    }
+
+    const generated = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(viewerStorageKey, generated);
+    return generated;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+async function sendLiveHeartbeat() {
+  if (Number(selectedCompetition.value) <= 0 || !viewerId.value) {
+    return;
+  }
+
+  try {
+    const { data } = await axios.post("/resultados/en-vivo/heartbeat", {
+      competencia_id: Number(selectedCompetition.value),
+      viewer_id: viewerId.value,
+    });
+
+    const count = Number(data?.viewers_count);
+    if (Number.isFinite(count)) {
+      liveData.value = {
+        ...liveData.value,
+        stream: {
+          ...(liveData.value.stream ?? {}),
+          viewers_count: count,
+        },
+      };
+    }
+  } catch {
+    // no-op: heartbeat errors should not block live results UI
+  }
+}
+
+function startLiveHeartbeat() {
+  if (liveHeartbeatTimer) {
+    clearInterval(liveHeartbeatTimer);
+    liveHeartbeatTimer = null;
+  }
+
+  if (Number(selectedCompetition.value) <= 0) {
+    return;
+  }
+
+  sendLiveHeartbeat();
+  liveHeartbeatTimer = setInterval(sendLiveHeartbeat, 25000);
 }
 
 function shouldHandleLiveEvent(payload) {
@@ -305,16 +382,23 @@ watch(
   () => {
     loadSnapshot();
     connectLiveStream();
+    startLiveHeartbeat();
   }
 );
 
 onMounted(() => {
+  viewerId.value = resolveViewerId();
   loadSnapshot();
   connectLiveStream();
+  startLiveHeartbeat();
 });
 
 onBeforeUnmount(() => {
   closeLiveStream();
+  if (liveHeartbeatTimer) {
+    clearInterval(liveHeartbeatTimer);
+    liveHeartbeatTimer = null;
+  }
 });
 </script>
 
@@ -335,7 +419,15 @@ onBeforeUnmount(() => {
             class="inline-flex items-center justify-center rounded-full px-2.5 py-1 text-xs font-semibold"
             :class="liveConnected ? 'bg-white text-emerald-700 ring-1 ring-emerald-200' : 'bg-white text-slate-700 ring-1 ring-slate-200'"
           >
-            {{ liveConnected ? `${liveConnectionMode} activo` : `Reconectando ${liveConnectionMode}` }}
+            En vivo
+          </span>
+
+          <span
+            v-if="liveViewers !== null"
+            class="inline-flex items-center gap-2 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/25"
+          >
+            <EyeIcon class="h-4 w-4" />
+            {{ liveViewers }}
           </span>
 
           <Link
