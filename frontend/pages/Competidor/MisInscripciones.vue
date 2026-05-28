@@ -624,7 +624,7 @@ const confirmarEliminarInscripcion = () => {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1180px] px-4 sm:px-6 lg:px-4 py-6 space-y-6">
+    <div class="mx-auto w-full max-w-[1180px] px-3 py-5 sm:px-6 sm:py-6 lg:px-4 space-y-5 sm:space-y-6">
       <section>
         <h1 class="text-2xl font-bold text-slate-900">Mis Inscripciones</h1>
         <p class="mt-1 text-sm text-slate-500">
@@ -632,7 +632,7 @@ const confirmarEliminarInscripcion = () => {
         </p>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
         <div class="flex items-start gap-4">
           <div class="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
             <CheckCircleIcon class="h-6 w-6 text-emerald-600" />
@@ -648,9 +648,9 @@ const confirmarEliminarInscripcion = () => {
           </div>
         </div>
 
-        <div class="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+        <div class="mt-6 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
           <div
-            class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 border-b border-slate-200 bg-slate-50 px-5 py-4 text-[11px] font-semibold uppercase tracking-wide text-slate-500"
+            class="grid min-w-[980px] grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 border-b border-slate-200 bg-slate-50 px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:px-5 sm:py-4"
           >
             <button
               type="button"
@@ -679,7 +679,7 @@ const confirmarEliminarInscripcion = () => {
             <article
               v-for="item in inscripcionesActivas"
               :key="`table-${item.id}`"
-              class="grid grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 px-5 py-5 transition"
+              class="grid min-w-[980px] grid-cols-[42px_2fr_1.1fr_1.2fr_1.1fr_0.9fr_92px] items-center gap-4 px-4 py-4 transition sm:px-5 sm:py-5"
               :class="getCardClasses(item.estado, item.estado_comprobante)"
             >
               <button
@@ -775,7 +775,7 @@ const confirmarEliminarInscripcion = () => {
         </div>
 
         <div
-          class="mt-6 grid gap-5 rounded-2xl border border-slate-200 bg-white px-5 py-5 shadow-sm lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center"
+          class="mt-6 grid gap-4 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:gap-5 sm:px-5 sm:py-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-center"
         >
           <div
             v-if="mostrarPanelPago"
@@ -824,7 +824,7 @@ const confirmarEliminarInscripcion = () => {
 
             <div class="text-left lg:text-right">
               <p class="text-sm text-slate-500">Total a pagar</p>
-              <p class="text-4xl font-bold tracking-tight text-slate-900">
+              <p class="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
                 {{ formatPrice(totalSelectedPrice) }}
               </p>
             </div>
@@ -1085,14 +1085,14 @@ const confirmarEliminarInscripcion = () => {
       <Teleport to="body">
         <div
           v-if="isDeleteModalOpen"
-          class="fixed inset-0 z-[10080] flex items-center justify-center bg-slate-950/60 px-4 py-6"
+          class="fixed inset-0 z-[10080] flex items-end justify-center bg-slate-950/60 px-3 py-3 sm:items-center sm:px-4 sm:py-6"
           @click="cerrarModalEliminarInscripcion"
         >
           <div
             class="w-full max-w-[460px] overflow-hidden rounded-2xl bg-white shadow-2xl"
             @click.stop
           >
-            <div class="px-6 pt-6">
+            <div class="px-4 pt-5 sm:px-6 sm:pt-6">
               <div class="flex items-start gap-4">
                 <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-red-50 text-red-600">
                   <TrashIcon class="h-6 w-6" />
@@ -1116,7 +1116,7 @@ const confirmarEliminarInscripcion = () => {
               </div>
             </div>
 
-            <div class="mt-6 grid grid-cols-1 gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 sm:grid-cols-2">
+            <div class="mt-5 grid grid-cols-1 gap-3 border-t border-slate-200 bg-slate-50 px-4 py-4 sm:mt-6 sm:grid-cols-2 sm:px-6">
               <button
                 type="button"
                 class="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-slate-700 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
@@ -1145,13 +1145,13 @@ const confirmarEliminarInscripcion = () => {
     <Teleport to="body">
       <div
         v-if="isModalComprobanteOpen"
-        class="fixed inset-0 z-[10040] bg-black/60 px-4 py-6 overflow-y-auto"
+        class="fixed inset-0 z-[10040] overflow-y-auto bg-black/60 px-3 py-3 sm:px-4 sm:py-6"
       >
         <div class="min-h-full w-full flex items-start sm:items-center justify-center">
           <!-- Modal -->
           <div class="w-full max-w-[640px] overflow-hidden rounded-2xl bg-white shadow-2xl">
             <!-- Header -->
-            <div class="relative bg-blue-600 px-5 py-4 text-white">
+            <div class="relative bg-blue-600 px-4 py-4 text-white sm:px-5">
             <button
               type="button"
               class="absolute right-4 top-4 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-white transition hover:bg-white/30"
@@ -1172,7 +1172,7 @@ const confirmarEliminarInscripcion = () => {
             </p>
           </div>
 
-          <div class="space-y-5 p-5">
+          <div class="space-y-4 p-4 sm:space-y-5 sm:p-5">
             <div class="rounded-xl border border-blue-200 bg-blue-50/60 p-4">
               <h4 class="text-lg font-semibold text-slate-900">
                 Detalle de Inscripciones
@@ -1343,7 +1343,7 @@ const confirmarEliminarInscripcion = () => {
               </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-3 pt-1">
+            <div class="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2">
               <button
                 type="button"
                 class="rounded-xl bg-slate-100 px-4 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-200"
@@ -1377,11 +1377,11 @@ const confirmarEliminarInscripcion = () => {
     <Teleport to="body">
       <div
         v-if="isComprobanteEnviadoOpen"
-        class="fixed inset-0 z-[10050] flex items-center justify-center bg-black/70 p-4"
+        class="fixed inset-0 z-[10050] flex items-end justify-center bg-black/70 p-3 sm:items-center sm:p-4"
         @click="cerrarComprobanteEnviado"
       >
         <div
-          class="w-full max-w-[340px] rounded-2xl bg-white px-6 py-8 text-center shadow-2xl"
+          class="w-full max-w-[340px] rounded-2xl bg-white px-5 py-7 text-center shadow-2xl sm:px-6 sm:py-8"
           @click.stop
         >
           <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100">

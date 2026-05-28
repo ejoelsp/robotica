@@ -362,10 +362,10 @@ function exportExcel() {
 </script>
 
 <template>
-  <div class="lg:px-4 py-6">
+  <div class="px-3 py-5 sm:px-6 sm:py-6 lg:px-4">
     <!-- Header -->
-    <div class="mb-8">
-      <h1 class="text-2xl font-bold text-slate-900">Gestión de Inscripciones</h1>
+    <div class="mb-6 sm:mb-8">
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Gestión de Inscripciones</h1>
       <p class="text-sm text-slate-500">
         Administra las inscripciones de equipos y participantes
       </p>
@@ -375,7 +375,7 @@ function exportExcel() {
     <section
       class="mb-6 overflow-hidden rounded-2xl border border-blue-100 bg-gradient-to-br from-blue-50 via-white to-emerald-50 shadow-sm"
     >
-      <div class="p-5 lg:p-6">
+      <div class="p-4 sm:p-5 lg:p-6">
         <div class="mb-5 flex gap-4">
           <div
             class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-sm"
@@ -448,7 +448,7 @@ function exportExcel() {
             </div>
           </div>
 
-          <div class="rounded-2xl border border-white/80 bg-white/75 px-5 py-5 shadow-sm">
+          <div class="rounded-2xl border border-white/80 bg-white/75 px-4 py-4 shadow-sm sm:px-5 sm:py-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Vista previa</p>
               <p
                 v-if="configuracionPagoForm.informacion_pago.trim()"
@@ -465,11 +465,11 @@ function exportExcel() {
     </section>
 
     <!-- Stats -->
-    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+    <div class="mb-6 grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-4">
       <div
         v-for="(s, idx) in statsUI"   
         :key="idx"
-        class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5"
       >
         <div class="flex items-start justify-between">
           <div
@@ -485,9 +485,9 @@ function exportExcel() {
 
     <!-- Tabs -->
     <div class="space-y-4">
-      <div class="inline-flex rounded-full bg-gray-200 p-1">
+      <div class="inline-flex w-full rounded-2xl bg-gray-200 p-1 sm:w-auto sm:rounded-full">
         <button
-          class="px-4 py-2 text-sm rounded-full transition"
+          class="flex-1 px-4 py-2 text-sm rounded-xl transition sm:flex-none sm:rounded-full"
           :class="
             activeTab === 'list'
               ? 'bg-white shadow-sm text-slate-900 font-semibold'
@@ -498,7 +498,7 @@ function exportExcel() {
           Lista de Inscripciones
         </button>
         <button
-          class="px-4 py-2 text-sm rounded-full transition"
+          class="flex-1 px-4 py-2 text-sm rounded-xl transition sm:flex-none sm:rounded-full"
           :class="
             activeTab === 'validation'
               ? 'bg-white shadow-sm text-slate-900 font-semibold'
@@ -585,7 +585,7 @@ function exportExcel() {
         <!-- Table -->
         <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="min-w-full">
+            <table class="min-w-[1080px] w-full">
               <thead class="bg-slate-50">
                 <tr class="text-left text-xs font-semibold text-slate-600">
                   <th class="px-5 py-4">Equipo</th>
@@ -716,7 +716,7 @@ function exportExcel() {
 
       <!-- TAB: VALIDATION -->
       <div v-else class="space-y-4">
-        <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
           <h3 class="text-lg font-semibold text-slate-900">Validación de Comprobantes de Pago</h3>
 
           <div class="mt-4 space-y-4">
@@ -751,7 +751,7 @@ function exportExcel() {
                     </div>
                   </div>
 
-                  <div class="mt-4 flex items-center justify-between border-t border-slate-200 pt-4">
+                  <div class="mt-4 flex items-center justify-between gap-3 border-t border-slate-200 pt-4">
                     <p class="text-sm font-medium text-slate-600">Monto total de pago</p>
                     <p class="text-2xl font-bold text-slate-900">
                       {{ formatPrice(row.totalAmount) }}
@@ -865,10 +865,10 @@ function exportExcel() {
             </div>
 
             <!-- footer -->
-            <div class="p-5 border-t border-slate-200 flex justify-end gap-3">
+            <div class="p-4 border-t border-slate-200 flex flex-col-reverse gap-2 sm:p-5 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 @click="closeRejectModal"
-                class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+                class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition sm:w-auto"
                 type="button"
               >
                 Cancelar
@@ -876,7 +876,7 @@ function exportExcel() {
 
               <button
                 @click="confirmRejectPayment"
-                class="px-4 py-2.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                class="w-full px-4 py-2.5 rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition font-semibold disabled:opacity-50 disabled:cursor-not-allowed sm:w-auto"
                 :disabled="!rejectReason || (isOtherReason && !rejectOtherText.trim()) || rejectForm.processing"
                 type="button"
               >
@@ -912,9 +912,9 @@ function exportExcel() {
             </button>
           </div>
 
-          <div class="p-5 flex justify-end gap-3">
+          <div class="p-4 flex flex-col-reverse gap-2 sm:p-5 sm:flex-row sm:justify-end sm:gap-3">
             <button
-              class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+              class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition sm:w-auto"
               type="button"
               @click="closeCorregirModal"
             >
@@ -922,7 +922,7 @@ function exportExcel() {
             </button>
 
             <button
-              class="px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition font-semibold"
+              class="w-full px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition font-semibold sm:w-auto"
               type="button"
               @click="confirmarCorregirDecision"
             >

@@ -325,15 +325,15 @@ function formatMetric(value, suffix = "") {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+  <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
     <div class="overflow-hidden rounded-3xl border border-slate-200 bg-slate-950 shadow-sm">
-      <div class="grid gap-6 p-6 text-white lg:grid-cols-[1fr_360px] lg:p-7">
+      <div class="grid gap-6 p-4 text-white sm:p-6 lg:grid-cols-[1fr_360px] lg:p-7">
         <div>
           <div class="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-blue-100 ring-1 ring-white/15">
             <PresentationChartLineIcon class="h-4 w-4" />
             Panel histórico oficial
           </div>
-          <h1 class="mt-4 text-3xl font-bold tracking-tight">Análisis Histórico</h1>
+          <h1 class="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Análisis Histórico</h1>
           <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
             Consulta cierres anuales por temporada y revisa el detalle de cada competencia con métricas consolidadas para administración.
           </p>
@@ -418,10 +418,10 @@ function formatMetric(value, suffix = "") {
         </p>
       </div>
 
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         <button
           type="button"
-          class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           :disabled="!canGenerate"
           @click="generarCierre"
         >
@@ -430,7 +430,7 @@ function formatMetric(value, suffix = "") {
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto"
           :disabled="!activeCierre"
           @click="exportCSV"
         >
@@ -439,7 +439,7 @@ function formatMetric(value, suffix = "") {
         </button>
         <button
           type="button"
-          class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto"
           :disabled="!activeCierre"
           @click="exportJSON"
         >
@@ -498,8 +498,8 @@ function formatMetric(value, suffix = "") {
           </div>
         </div>
 
-        <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div v-for="kpi in kpis" :key="kpi.label" class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div v-for="kpi in kpis" :key="kpi.label" class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div class="flex items-start justify-between gap-3">
               <div class="rounded-xl p-3" :class="kpi.tone">
                 <component :is="kpi.icon" class="h-6 w-6" />
@@ -515,7 +515,7 @@ function formatMetric(value, suffix = "") {
         </div>
 
         <div class="grid gap-4 lg:grid-cols-[1fr_360px]">
-          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <h2 class="text-lg font-bold text-slate-900">Lectura rápida</h2>
             <div class="mt-4 grid gap-3 md:grid-cols-2">
               <div v-for="item in observaciones" :key="item" class="rounded-xl bg-slate-50 p-4 text-sm leading-6 text-slate-600">
@@ -527,7 +527,7 @@ function formatMetric(value, suffix = "") {
             </div>
           </section>
 
-          <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <h2 class="text-lg font-bold text-slate-900">Estado general</h2>
             <div class="mt-4 space-y-3">
               <div v-for="stat in cierreStats" :key="stat.label" class="flex items-center justify-between rounded-xl p-4" :class="stat.tone">
@@ -540,7 +540,7 @@ function formatMetric(value, suffix = "") {
       </section>
 
       <section v-else-if="activeTab === 'instituciones'" class="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-bold text-slate-900">Rendimiento por institución</h2>
@@ -641,7 +641,7 @@ function formatMetric(value, suffix = "") {
           <h2 class="text-lg font-bold text-slate-900">Indicadores técnicos por categoría</h2>
           <p class="mt-1 text-sm text-slate-500">Resultados registrados, mejor tiempo y mejor puntaje según el mecanismo de calificación.</p>
           <div class="mt-5 overflow-x-auto">
-            <table class="min-w-full text-sm">
+            <table class="min-w-[680px] w-full text-sm">
               <thead class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
                 <tr>
                   <th class="px-4 py-3">Categoría</th>
@@ -664,7 +664,7 @@ function formatMetric(value, suffix = "") {
       </section>
 
       <section v-else-if="activeTab === 'tendencias'" class="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h2 class="text-lg font-bold text-slate-900">Comparativo anual</h2>
           <p class="mt-1 text-sm text-slate-500">Evolución de participantes por temporada cerrada.</p>
           <div v-if="comparativo.length" class="mt-5 flex h-72 items-end gap-3 overflow-x-auto border-b border-slate-200 pb-3">
@@ -685,7 +685,7 @@ function formatMetric(value, suffix = "") {
           </p>
         </section>
 
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h2 class="flex items-center gap-2 text-lg font-bold text-slate-900">
             <SparklesIcon class="h-5 w-5 text-blue-600" />
             Proyección
@@ -712,7 +712,7 @@ function formatMetric(value, suffix = "") {
       </section>
 
       <section v-else class="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <h2 class="text-lg font-bold text-slate-900">Regla del cierre oficial</h2>
           <p class="mt-2 text-sm leading-6 text-slate-500">
             El cierre se habilita cuando todas las categorías evaluables tienen sus rondas cerradas. Esta regla evita consolidar resultados incompletos.

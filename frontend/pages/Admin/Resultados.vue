@@ -950,15 +950,15 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1180px] px-4 py-6 sm:px-6 lg:px-4 space-y-6">
+    <div class="mx-auto w-full max-w-[1180px] px-3 py-5 space-y-5 sm:px-6 sm:py-6 sm:space-y-6 lg:px-4">
       <div class="flex flex-col gap-1">
-        <h1 class="text-2xl font-bold text-slate-900">Resultados de Competencias</h1>
+        <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Resultados de Competencias</h1>
         <p class="text-sm text-slate-500">Registra evaluaciones, consolida clasificaciones y prepara la publicación final.</p>
       </div>
 
-      <div class="inline-flex rounded-2xl border border-slate-200 bg-gray-200 p-1">
+      <div class="inline-flex w-full rounded-2xl border border-slate-200 bg-gray-200 p-1 sm:w-auto">
         <button
-          class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition sm:flex-none"
           :class="activeTab === 'registros' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'registros'"
         >
@@ -967,7 +967,7 @@ onBeforeUnmount(() => {
         </button>
 
         <button
-          class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition"
+          class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition sm:flex-none"
           :class="activeTab === 'publicaciones' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'publicaciones'"
         >
@@ -1114,7 +1114,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
+            <table class="min-w-[1180px] w-full text-sm">
               <thead class="bg-white">
                 <tr class="border-b border-slate-200 text-left text-black">
                   <th class="px-6 py-4 font-medium">Estado</th>
@@ -1411,7 +1411,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="publicationHistory.length" class="overflow-x-auto">
-            <table class="min-w-full text-sm">
+            <table class="min-w-[900px] w-full text-sm">
               <thead class="bg-white">
                 <tr class="border-b border-slate-200 text-left text-black">
                   <th class="px-6 py-4 font-medium">Evento</th>
@@ -1460,7 +1460,7 @@ onBeforeUnmount(() => {
 
         <div v-else class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div class="overflow-x-auto">
-            <table class="min-w-full text-sm">
+            <table class="min-w-[860px] w-full text-sm">
               <thead class="bg-white">
                 <tr class="border-b border-slate-200 text-left text-black">
                   <th class="px-6 py-4 font-medium w-[110px]">Posición</th>
@@ -1683,7 +1683,7 @@ onBeforeUnmount(() => {
               </div>
 
               <div class="overflow-x-auto">
-                <table class="min-w-full text-sm">
+                <table class="min-w-[760px] w-full text-sm">
                   <thead>
                     <tr v-if="scope.usa_enfrentamiento" class="border-b border-slate-200 text-left text-slate-600">
                       <th class="py-3 pr-4 font-medium">Encuentro</th>
@@ -1812,7 +1812,7 @@ onBeforeUnmount(() => {
               <p class="text-sm text-slate-500">Edita las cantidades registradas por el juez y revisa el impacto en cada participante.</p>
             </div>
             <div class="overflow-x-auto">
-              <table class="min-w-full text-sm">
+              <table class="min-w-[760px] w-full text-sm">
                 <thead class="bg-white text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3 font-semibold">Criterio</th>
@@ -1885,7 +1885,7 @@ onBeforeUnmount(() => {
               <p class="text-sm text-slate-500">Cada cantidad se multiplica por su valor configurado en la plantilla.</p>
             </div>
             <div class="overflow-x-auto">
-              <table class="min-w-full text-sm">
+              <table class="min-w-[760px] w-full text-sm">
                 <thead class="bg-white text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3 font-semibold">Criterio</th>
@@ -1938,7 +1938,7 @@ onBeforeUnmount(() => {
               <p class="text-sm text-slate-500">Edita el puntaje otorgado dentro del máximo configurado para cada criterio.</p>
             </div>
             <div class="overflow-x-auto">
-              <table class="min-w-full text-sm">
+              <table class="min-w-[760px] w-full text-sm">
                 <thead class="bg-white text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3 font-semibold">Criterio</th>
@@ -2165,17 +2165,17 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="flex justify-end gap-3 border-t border-slate-200 px-5 py-4">
+        <div class="flex flex-col-reverse gap-2 border-t border-slate-200 px-4 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-5">
           <button
             type="button"
-            class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+            class="w-full rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
             @click="closeEditEvaluacion"
           >
             Cancelar
           </button>
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+            class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
             :disabled="editEvaluacionSaving"
             @click="saveEditEvaluacion"
           >
@@ -2218,7 +2218,7 @@ onBeforeUnmount(() => {
             v-if="selectedLiveDetail.detail?.matriz_jueces"
             class="mb-5 overflow-x-auto rounded-xl border border-slate-200"
           >
-            <table class="min-w-full text-sm">
+            <table class="min-w-[760px] w-full text-sm">
               <thead class="bg-slate-50 text-left text-slate-600">
                 <tr>
                   <th class="px-4 py-3">Juez</th>
@@ -2273,7 +2273,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-slate-200">
-              <table class="min-w-full text-sm">
+              <table class="min-w-[760px] w-full text-sm">
                 <thead class="bg-slate-50 text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3">Criterio</th>
@@ -2300,7 +2300,7 @@ onBeforeUnmount(() => {
 
           <template v-else-if="['tabla_individual_criterios', 'tabla_individual_puntaje_maximo'].includes(selectedLiveDetail.detail?.tipo)">
             <div class="overflow-x-auto rounded-xl border border-slate-200">
-              <table class="min-w-full text-sm">
+              <table class="min-w-[760px] w-full text-sm">
                 <thead class="bg-slate-50 text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3">Criterio</th>

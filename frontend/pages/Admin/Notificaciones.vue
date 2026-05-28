@@ -237,10 +237,10 @@ function channelLabel(canal) {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1180px] px-4 sm:px-6 lg:px-4 py-6 space-y-6">
+    <div class="mx-auto w-full max-w-[1180px] px-3 py-5 space-y-5 sm:px-6 sm:py-6 sm:space-y-6 lg:px-4">
       <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900">Sistema de Notificaciones</h1>
+          <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Sistema de Notificaciones</h1>
           <p class="text-sm text-slate-500">Envía avisos internos y correos a competidores</p>
         </div>
 
@@ -261,8 +261,8 @@ function channelLabel(canal) {
         {{ flashError }}
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="h-10 w-10 rounded-xl bg-blue-600/10 flex items-center justify-center">
             <PaperAirplaneIcon class="w-5 h-5 text-blue-600" />
           </div>
@@ -270,7 +270,7 @@ function channelLabel(canal) {
           <p class="text-sm text-slate-500 mt-1">Notificaciones enviadas</p>
         </div>
 
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="h-10 w-10 rounded-xl bg-emerald-600/10 flex items-center justify-center">
             <InboxIcon class="w-5 h-5 text-emerald-600" />
           </div>
@@ -278,7 +278,7 @@ function channelLabel(canal) {
           <p class="text-sm text-slate-500 mt-1">Recibidas</p>
         </div>
 
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="h-10 w-10 rounded-xl bg-orange-600/10 flex items-center justify-center">
             <BellAlertIcon class="w-5 h-5 text-orange-600" />
           </div>
@@ -288,9 +288,9 @@ function channelLabel(canal) {
 
       </div>
 
-      <div class="inline-flex items-center rounded-2xl bg-gray-200 p-1">
+      <div class="inline-flex w-full items-center rounded-2xl bg-gray-200 p-1 sm:w-auto">
         <button
-          class="px-4 py-2 rounded-2xl text-sm font-medium transition"
+          class="flex-1 px-4 py-2 rounded-2xl text-sm font-medium transition sm:flex-none"
           :class="activeTab === 'enviadas' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'enviadas'"
           type="button"
@@ -298,7 +298,7 @@ function channelLabel(canal) {
           Enviadas
         </button>
         <button
-          class="px-4 py-2 rounded-2xl text-sm font-medium transition"
+          class="flex-1 px-4 py-2 rounded-2xl text-sm font-medium transition sm:flex-none"
           :class="activeTab === 'recibidas' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'recibidas'"
           type="button"
@@ -309,13 +309,13 @@ function channelLabel(canal) {
 
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
         <div v-if="activeTab === 'enviadas'" class="p-4 sm:p-6 space-y-4">
-          <div v-for="n in enviadas" :key="n.id" class="rounded-2xl border border-slate-200 bg-white p-5 flex gap-4">
+          <div v-for="n in enviadas" :key="n.id" class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:gap-4 sm:p-5">
             <div class="h-12 w-12 rounded-xl flex items-center justify-center shrink-0" :class="typeMeta(n.tipo).bgColor">
               <component :is="typeMeta(n.tipo).icon" class="w-6 h-6" :class="typeMeta(n.tipo).iconColor" />
             </div>
 
             <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <div class="min-w-0">
                   <p class="font-semibold text-slate-900 leading-tight">{{ n.asunto }}</p>
                   <p class="text-sm text-slate-600 mt-1">{{ n.contenido }}</p>
@@ -351,7 +351,7 @@ function channelLabel(canal) {
           <div
             v-for="n in recibidas"
             :key="n.id"
-            class="rounded-2xl border border-slate-200 bg-white p-5 flex gap-4"
+            class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3 sm:flex-row sm:gap-4 sm:p-5"
             :class="!n.leido ? 'ring-1 ring-blue-100' : ''"
           >
             <div class="h-12 w-12 rounded-xl flex items-center justify-center shrink-0" :class="typeMeta(n.tipo).bgColor">
@@ -359,7 +359,7 @@ function channelLabel(canal) {
             </div>
 
             <div class="min-w-0 flex-1">
-              <div class="flex items-start justify-between gap-3">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
                 <div class="min-w-0">
                   <p class="font-semibold text-slate-900 leading-tight">{{ n.asunto }}</p>
                   <p class="text-sm text-slate-600 mt-1">{{ n.contenido }}</p>
@@ -367,7 +367,7 @@ function channelLabel(canal) {
                 <button
                   v-if="!n.leido"
                   @click.prevent.stop="markAsRead(n.id)"
-                  class="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100 transition shrink-0"
+                  class="px-3 py-2 rounded-xl bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100 transition sm:shrink-0 sm:py-1.5"
                   type="button"
                 >
                   Marcar leída
@@ -506,15 +506,15 @@ function channelLabel(canal) {
                 </div>
               </div>
 
-              <div class="p-5 border-t border-slate-200 flex justify-end gap-3">
-                <button @click="closeModal" class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition" type="button">
+              <div class="p-4 border-t border-slate-200 flex flex-col-reverse gap-2 sm:p-5 sm:flex-row sm:justify-end sm:gap-3">
+                <button @click="closeModal" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition sm:w-auto" type="button">
                   Cancelar
                 </button>
 
                 <button
                   @click="submit"
                   :disabled="form.processing || !canSubmit"
-                  class="px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition inline-flex items-center gap-2 disabled:opacity-60"
+                  class="w-full px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition inline-flex items-center justify-center gap-2 disabled:opacity-60 sm:w-auto"
                   type="button"
                 >
                   <PaperAirplaneIcon class="w-5 h-5" />

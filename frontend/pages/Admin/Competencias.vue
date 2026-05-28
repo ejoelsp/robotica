@@ -531,10 +531,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="space-y-6 px-4 py-6 sm:px-6 lg:px-4">
-    <header class="flex items-center justify-between">
+  <div class="space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900">
+        <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">
           Gestión de Competencias de Robótica
         </h1>
         <p class="text-sm text-slate-500">
@@ -544,7 +544,7 @@ onBeforeUnmount(() => {
 
       <button
         @click="openModal"
-        class="rounded-xl bg-blue-600 px-5 py-2 font-medium text-white shadow hover:bg-blue-700"
+        class="w-full rounded-xl bg-blue-600 px-5 py-2 font-medium text-white shadow hover:bg-blue-700 sm:w-auto"
       >
         + Nueva Competencia
       </button>
@@ -562,7 +562,7 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <section class="grid grid-cols-1 gap-5 lg:grid-cols-2">
+    <section class="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
       <article
         v-for="c in filteredCompetitions"
         :key="c.id"
@@ -586,11 +586,11 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <div class="absolute right-4 top-4 flex gap-2">
+          <div class="absolute left-3 right-3 top-3 flex flex-wrap justify-end gap-2 sm:left-auto sm:right-4 sm:top-4 sm:flex-nowrap">
             <button
               type="button"
               @click.stop="toggleCompetencia(c.id)"
-              class="inline-flex items-center rounded-xl border px-4 py-2 text-sm font-medium backdrop-blur transition"
+              class="inline-flex items-center rounded-xl border px-3 py-1.5 text-xs font-medium backdrop-blur transition sm:px-4 sm:py-2 sm:text-sm"
               :class="
                 c.estado
                   ? 'border-emerald-200 bg-emerald-50/90 text-emerald-700 hover:bg-emerald-100'
@@ -616,8 +616,8 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="p-5">
-          <h3 class="mb-2 break-words pr-16 text-lg font-bold text-slate-900 line-clamp-2">
+        <div class="p-4 sm:p-5">
+          <h3 class="mb-2 break-words pr-0 text-base font-bold text-slate-900 line-clamp-2 sm:pr-16 sm:text-lg">
             {{ c.nombre }}
           </h3>
 
@@ -658,7 +658,7 @@ onBeforeUnmount(() => {
               class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100"
             >
               <UserGroupIcon class="h-5 w-5" />
-              Comite organizador
+              Comité organizador
               <span class="rounded-full bg-white px-2 py-0.5 text-xs text-blue-700">
                 {{ c.comite_organizadores?.length ?? 0 }}
               </span>
@@ -674,9 +674,9 @@ onBeforeUnmount(() => {
           v-if="isModalOpen"
           class="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm"
         >
-          <div class="w-full max-w-3xl rounded-3xl bg-white p-6 shadow-xl">
-            <div class="mb-4 flex items-center justify-between">
-              <h2 class="text-xl font-semibold">
+          <div class="w-full max-w-3xl rounded-3xl bg-white p-4 shadow-xl sm:p-6">
+            <div class="mb-4 flex items-center justify-between gap-3">
+              <h2 class="text-lg font-semibold sm:text-xl">
                 {{ isEditing ? "Editar Competencia" : "Crear Nueva Competencia" }}
               </h2>
               <button
@@ -871,10 +871,10 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div class="mt-4 flex justify-end gap-3 border-t pt-4">
+            <div class="mt-4 flex flex-col-reverse gap-2 border-t pt-4 sm:flex-row sm:justify-end sm:gap-3">
               <button
                 @click="closeModal"
-                class="rounded-xl border px-4 py-2 text-slate-700 hover:bg-slate-50"
+                class="w-full rounded-xl border px-4 py-2 text-slate-700 hover:bg-slate-50 sm:w-auto"
               >
                 Cancelar
               </button>
@@ -883,7 +883,7 @@ onBeforeUnmount(() => {
                 @click="submitForm"
                 :disabled="!isFormValid || form.processing"
                 :class="[
-                  'rounded-xl px-5 py-2 font-semibold',
+                  'w-full rounded-xl px-5 py-2 font-semibold sm:w-auto',
                   !isFormValid || form.processing
                     ? 'cursor-not-allowed bg-slate-300 text-slate-500'
                     : 'bg-blue-600 text-white hover:bg-blue-700',
@@ -910,14 +910,14 @@ onBeforeUnmount(() => {
           class="fixed inset-0 z-[82] flex items-center justify-center bg-black/40 px-4 py-6 backdrop-blur-sm"
           @click.self="closeCommitteeModal"
         >
-          <div class="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-3xl bg-white p-6 shadow-xl">
+          <div class="flex max-h-[92vh] w-full max-w-6xl flex-col rounded-3xl bg-white p-4 shadow-xl sm:p-6">
             <div class="mb-5 flex items-start justify-between gap-4">
               <div>
                 <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">
                   {{ selectedCommitteeCompetition?.nombre || "Competencia" }}
                 </p>
-                <h2 class="text-xl font-semibold text-slate-900">
-                  Comite organizador
+                <h2 class="text-lg font-semibold text-slate-900 sm:text-xl">
+                  Comité organizador
                 </h2>
               </div>
 
@@ -930,7 +930,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <div class="grid min-h-0 grid-cols-1 gap-6 overflow-y-auto pr-1 lg:grid-cols-[1fr_380px]">
+            <div class="grid min-h-0 grid-cols-1 gap-4 overflow-y-auto pr-1 sm:gap-6 lg:grid-cols-[1fr_380px]">
               <section class="space-y-3">
                 <div
                   v-if="selectedCommitteeMembers.length === 0"
@@ -1163,7 +1163,7 @@ onBeforeUnmount(() => {
           class="fixed inset-0 z-[85] flex items-center justify-center bg-black/45 backdrop-blur-sm"
           @click.self="closeDeleteConfirm"
         >
-          <div class="w-full max-w-md rounded-3xl border bg-white p-6 shadow-2xl">
+          <div class="w-full max-w-md rounded-3xl border bg-white p-4 shadow-2xl sm:p-6">
             <div class="flex items-start gap-4">
               <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-red-100 text-red-600">
                 <ExclamationTriangleIcon class="h-6 w-6" />
@@ -1193,15 +1193,15 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <div class="mt-6 flex justify-end gap-3">
+            <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
               <button
-                class="rounded-xl border px-4 py-2 text-slate-700 hover:bg-slate-50"
+                class="w-full rounded-xl border px-4 py-2 text-slate-700 hover:bg-slate-50 sm:w-auto"
                 @click="closeDeleteConfirm"
               >
                 Cancelar
               </button>
               <button
-                class="rounded-xl bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700"
+                class="w-full rounded-xl bg-red-600 px-4 py-2 font-semibold text-white hover:bg-red-700 sm:w-auto"
                 @click="deleteCompetition"
               >
                 Eliminar competencia
@@ -1219,7 +1219,7 @@ onBeforeUnmount(() => {
           class="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 backdrop-blur-sm"
           @click.self="isFeedbackOpen = false"
         >
-          <div class="w-full max-w-md rounded-3xl border bg-white p-6 shadow-2xl">
+          <div class="w-full max-w-md rounded-3xl border bg-white p-4 shadow-2xl sm:p-6">
             <div class="flex items-start gap-3">
               <div
                 class="flex h-10 w-10 items-center justify-center rounded-2xl"

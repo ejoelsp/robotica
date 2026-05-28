@@ -20,20 +20,20 @@ function refreshPage() {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-      <div>
-        <h1 class="text-2xl font-bold text-slate-900">
+  <div class="space-y-5 sm:space-y-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div class="min-w-0">
+        <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">
           Bienvenido, {{ user.name || "Juez" }}
         </h1>
-        <p class="mt-1 text-sm text-slate-500">
+        <p class="mt-1 text-sm leading-6 text-slate-500">
           Tus evaluaciones ya usan la configuración real de categorías y mecanismos definida por el administrador.
         </p>
       </div>
 
       <button
         type="button"
-        class="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 sm:w-auto"
         @click="refreshPage"
       >
         <ArrowPathIcon class="h-5 w-5" />

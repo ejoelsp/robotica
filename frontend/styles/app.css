@@ -2,9 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#app {
+  min-height: 100%;
+  margin: 0;
+  background: #f1f5f9;
+}
+
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
 }
 
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-caps-lock-indicator,
+input[type="password"]::-webkit-textfield-decoration-container {
+  display: none !important;
+  visibility: hidden;
+  pointer-events: none;
+}
 

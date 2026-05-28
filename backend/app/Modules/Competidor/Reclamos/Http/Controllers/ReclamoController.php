@@ -173,7 +173,7 @@ class ReclamoController extends Controller
         return [
             'id' => $inscripcion->id,
             'codigo' => 'REC-BORRADOR',
-            'fecha' => now()->format('d/m/Y H:i'),
+            'fecha' => now()->format('d/m/Y'),
             'evento' => [
                 'id' => $competencia?->id,
                 'nombre' => $competencia?->nombre ?? 'Evento',

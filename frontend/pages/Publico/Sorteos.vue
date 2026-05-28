@@ -118,8 +118,8 @@ watch(
 
 <template>
   <div class="min-h-screen bg-slate-100">
-    <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-8 sm:px-6 lg:px-4">
-      <div class="flex flex-col gap-4 rounded-3xl bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500 px-6 py-8 text-white shadow-lg md:flex-row md:items-end md:justify-between">
+    <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8 lg:px-4">
+      <div class="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500 px-4 py-6 text-white shadow-lg sm:rounded-3xl sm:px-6 sm:py-8 md:flex-row md:items-end md:justify-between">
         <div>
           <p class="text-sm uppercase tracking-[0.2em] text-white/80">Club de Robótica ESPOCH</p>
           <h1 class="mt-2 text-3xl font-bold leading-tight">Sorteos</h1>
@@ -130,15 +130,15 @@ watch(
 
         <Link
           href="/resultados-en-vivo"
-          class="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 sm:w-auto"
         >
           <EyeIcon class="h-5 w-5" />
           Ver resultados en vivo
         </Link>
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div class="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-4">
           <div>
             <label class="mb-1 block text-sm font-medium text-slate-700">Competencia</label>
             <select
@@ -199,7 +199,7 @@ watch(
       </div>
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="border-b border-slate-200 px-6 py-5">
+        <div class="border-b border-slate-200 px-4 py-4 sm:px-6 sm:py-5">
           <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wide text-blue-600">
@@ -220,26 +220,26 @@ watch(
 
         <div v-if="vista.sorteo?.tipo_sorteo === 'enfrentamiento' && (sorteoGroups.length || sorteoDirectItems.length)" class="space-y-5">
           <div v-if="sorteoGroups.length" class="overflow-x-auto">
-            <div class="border-b border-slate-100 bg-slate-50 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <div class="border-b border-slate-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500 sm:px-6">
               {{ sorteoDirectItems.length ? "Ronda previa" : "Llaves de enfrentamiento" }}
             </div>
-            <table class="min-w-full text-sm">
+            <table class="min-w-[920px] w-full text-sm">
               <thead class="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th class="w-24 px-6 py-4 font-semibold">Combate</th>
-                  <th class="px-6 py-4 font-semibold">Participante A</th>
+                  <th class="w-24 px-3 py-3 font-semibold sm:px-6 sm:py-4">Combate</th>
+                  <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Participante A</th>
                   <th class="w-16 px-2 py-4 text-center font-semibold"></th>
-                  <th class="px-6 py-4 font-semibold">Participante B</th>
+                  <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Participante B</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100 bg-white">
                 <tr v-for="group in sorteoGroups" :key="`sorteo-${group.grupo}`">
-                  <td class="px-6 py-4">
+                  <td class="px-3 py-3 sm:px-6 sm:py-4">
                     <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
                       {{ group.grupo }}
                     </span>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-3 py-3 sm:px-6 sm:py-4">
                     <p class="font-semibold text-slate-900">
                       {{ participantFor(group, 'A')?.nombre_prototipo || participantFor(group, 'A')?.equipo_nombre || group.items[0]?.nombre_prototipo || group.items[0]?.equipo_nombre || "-" }}
                     </p>
@@ -252,7 +252,7 @@ watch(
                       VS
                     </span>
                   </td>
-                  <td class="px-6 py-4">
+                  <td class="px-3 py-3 sm:px-6 sm:py-4">
                     <p class="font-semibold text-slate-900">
                       {{ participantFor(group, 'B')?.nombre_prototipo || participantFor(group, 'B')?.equipo_nombre || "-" }}
                     </p>
@@ -266,22 +266,22 @@ watch(
           </div>
 
           <div v-if="sorteoDirectItems.length" class="overflow-x-auto">
-            <div class="border-b border-emerald-100 bg-emerald-50 px-6 py-3 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            <div class="border-b border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-emerald-700 sm:px-6">
               Pasan directo
             </div>
-            <table class="min-w-full text-sm">
+            <table class="min-w-[920px] w-full text-sm">
               <thead class="bg-white text-left text-[11px] uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th class="w-24 px-6 py-4 font-semibold">Orden</th>
-                  <th class="px-6 py-4 font-semibold">Participante</th>
-                  <th class="px-6 py-4 font-semibold">Institucion</th>
+                  <th class="w-24 px-3 py-3 font-semibold sm:px-6 sm:py-4">Orden</th>
+                  <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Participante</th>
+                  <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Institucion</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-emerald-50 bg-white">
                 <tr v-for="item in sorteoDirectItems" :key="`directo-${item.inscripcion_id}`">
-                  <td class="px-6 py-4 font-semibold text-emerald-700">{{ item.orden }}</td>
-                  <td class="px-6 py-4 font-semibold text-slate-900">{{ item.nombre_prototipo || item.equipo_nombre || "-" }}</td>
-                  <td class="px-6 py-4 text-slate-600">{{ item.institucion || "Sin institucion" }}</td>
+                  <td class="px-3 py-3 font-semibold text-emerald-700 sm:px-6 sm:py-4">{{ item.orden }}</td>
+                  <td class="px-3 py-3 font-semibold text-slate-900 sm:px-6 sm:py-4">{{ item.nombre_prototipo || item.equipo_nombre || "-" }}</td>
+                  <td class="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">{{ item.institucion || "Sin institucion" }}</td>
                 </tr>
               </tbody>
             </table>
@@ -289,29 +289,29 @@ watch(
         </div>
 
         <div v-else-if="vista.sorteo && sorteoOrdenItems.length" class="overflow-x-auto">
-          <table class="min-w-full text-sm">
+          <table class="min-w-[920px] w-full text-sm">
             <thead class="bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
               <tr>
-                <th class="w-24 px-6 py-4 font-semibold">Orden</th>
-                <th class="px-6 py-4 font-semibold">Participante</th>
-                <th class="px-6 py-4 font-semibold">Institucion</th>
+                <th class="w-24 px-3 py-3 font-semibold sm:px-6 sm:py-4">Orden</th>
+                <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Participante</th>
+                <th class="px-3 py-3 font-semibold sm:px-6 sm:py-4">Institucion</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100 bg-white">
               <tr v-for="item in sorteoOrdenItems" :key="`orden-${item.orden}-${item.participante}`">
-                <td class="px-6 py-4">
+                <td class="px-3 py-3 sm:px-6 sm:py-4">
                   <span class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">
                     {{ item.orden }}
                   </span>
                 </td>
-                <td class="px-6 py-4 font-semibold text-slate-900">{{ item.participante }}</td>
-                <td class="px-6 py-4 text-slate-600">{{ item.institucion }}</td>
+                <td class="px-3 py-3 font-semibold text-slate-900 sm:px-6 sm:py-4">{{ item.participante }}</td>
+                <td class="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">{{ item.institucion }}</td>
               </tr>
             </tbody>
           </table>
         </div>
 
-        <div v-else class="px-6 py-14 text-center">
+        <div v-else class="px-4 py-10 text-center sm:px-6 sm:py-14">
           <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
             <Squares2X2Icon class="h-7 w-7 text-slate-500" />
           </div>

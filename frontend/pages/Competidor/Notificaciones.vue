@@ -97,36 +97,36 @@ function typeMeta(type) {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-5 px-3 py-5 sm:space-y-6 sm:px-0 sm:py-0">
     <div>
-      <h1 class="text-2xl font-bold text-slate-900">Mis Notificaciones</h1>
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis Notificaciones</h1>
       <p class="text-sm text-slate-500 mt-1">Consulta los avisos enviados por el sistema y administración</p>
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div class="h-10 w-10 rounded-xl bg-blue-600/10 flex items-center justify-center">
           <InboxIcon class="w-5 h-5 text-blue-600" />
         </div>
-        <p class="text-3xl font-semibold text-slate-900 mt-4">{{ dashboardStats.recibidas }}</p>
+        <p class="mt-4 text-2xl font-semibold text-slate-900 sm:text-3xl">{{ dashboardStats.recibidas }}</p>
         <p class="text-sm text-slate-500 mt-1">Notificaciones recibidas</p>
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div class="h-10 w-10 rounded-xl bg-orange-600/10 flex items-center justify-center">
           <BellAlertIcon class="w-5 h-5 text-orange-600" />
         </div>
-        <p class="text-3xl font-semibold text-slate-900 mt-4">{{ dashboardStats.noLeidas }}</p>
+        <p class="mt-4 text-2xl font-semibold text-slate-900 sm:text-3xl">{{ dashboardStats.noLeidas }}</p>
         <p class="text-sm text-slate-500 mt-1">No leídas</p>
       </div>
     </div>
 
     <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div class="p-4 sm:p-6 space-y-4">
+      <div class="space-y-3 p-3 sm:space-y-4 sm:p-6">
         <div
           v-for="n in recibidas"
           :key="n.id"
-          class="rounded-2xl border border-slate-200 bg-white p-5 flex gap-4"
+          class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:gap-4 sm:p-5"
           :class="!n.leido ? 'ring-1 ring-blue-100' : ''"
         >
           <div class="h-12 w-12 rounded-xl flex items-center justify-center shrink-0" :class="typeMeta(n.tipo).bgColor">
@@ -134,7 +134,7 @@ function typeMeta(type) {
           </div>
 
           <div class="min-w-0 flex-1">
-            <div class="flex items-start justify-between gap-3">
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
               <div class="min-w-0">
                 <p class="font-semibold text-slate-900 leading-tight">{{ n.asunto }}</p>
                 <p class="text-sm text-slate-600 mt-1">{{ n.contenido }}</p>
@@ -142,7 +142,7 @@ function typeMeta(type) {
               <button
                 v-if="!n.leido"
                 @click.prevent.stop="markAsRead(n.id)"
-                class="px-3 py-1.5 rounded-xl bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100 transition shrink-0"
+                class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-medium text-blue-700 transition hover:bg-blue-100 sm:shrink-0 sm:py-1.5"
                 type="button"
               >
                 Marcar leída
@@ -162,7 +162,7 @@ function typeMeta(type) {
           </div>
         </div>
 
-        <div v-if="recibidas.length === 0" class="py-12 text-center text-slate-500">
+        <div v-if="recibidas.length === 0" class="py-10 text-center text-sm text-slate-500 sm:py-12 sm:text-base">
           No tienes notificaciones recibidas.
         </div>
       </div>

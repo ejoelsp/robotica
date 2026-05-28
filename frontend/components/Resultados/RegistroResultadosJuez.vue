@@ -60,6 +60,8 @@ const invalidTimeOtherReason = ref("");
 const nextAttemptModalOpen = ref(false);
 const completedAttemptNumber = ref(1);
 const nextAttemptNumber = ref(2);
+const regenerateDrawModalOpen = ref(false);
+let regenerateDrawModalResolver = null;
 const roundCompletionModal = ref({
   show: false,
   isFinal: false,
@@ -391,15 +393,6 @@ const currentSorteoLabel = computed(() => {
   return currentSorteo.value.tipo_sorteo === "enfrentamiento"
     ? "Llaves de enfrentamiento"
     : "Orden de participación";
-});
-
-const remoteRegisteredTeamsCount = computed(() => {
-  return Number(selectedCategory.value?.categoria?.equipos_inscritos_count ?? remoteTeams.value.length ?? 0);
-});
-
-const remoteTeamsCountLabel = computed(() => {
-  const count = remoteRegisteredTeamsCount.value;
-  return `${count} ${count === 1 ? "equipo inscrito" : "equipos inscritos"}`;
 });
 
 function normalizeTextForCompare(value) {
@@ -1442,8 +1435,13 @@ async function generarSorteoRemoto() {
 
   const regenerar = !!currentSorteo.value;
 
+  if (regenerar && !(await confirmRegenerateDraw())) {
+    return;
+  }
+
   if (
     regenerar &&
+    remoteDrawGenerating.value &&
     !window.confirm("Se generará un nuevo sorteo para esta ronda. El sorteo anterior quedará anulado. ¿Deseas continuar?")
   ) {
     return;
@@ -1478,6 +1476,21 @@ async function generarSorteoRemoto() {
     );
   } finally {
     remoteDrawGenerating.value = false;
+  }
+}
+
+function confirmRegenerateDraw() {
+  regenerateDrawModalOpen.value = true;
+  return new Promise((resolve) => {
+    regenerateDrawModalResolver = resolve;
+  });
+}
+
+function closeRegenerateDrawModal(confirmed) {
+  regenerateDrawModalOpen.value = false;
+  if (regenerateDrawModalResolver) {
+    regenerateDrawModalResolver(confirmed);
+    regenerateDrawModalResolver = null;
   }
 }
 
@@ -1978,6 +1991,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (regenerateDrawModalResolver) {
+    regenerateDrawModalResolver(false);
+    regenerateDrawModalResolver = null;
+  }
+
   if (toastTimer) {
     clearTimeout(toastTimer);
   }
@@ -1993,7 +2011,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-5 sm:space-y-6">
     <div
       v-if="toast.show"
       class="fixed right-4 top-4 z-[10050] w-[min(92vw,420px)] rounded-2xl border bg-white p-4 shadow-2xl"
@@ -2145,6 +2163,44 @@ onBeforeUnmount(() => {
       </div>
 
       <div
+        v-if="regenerateDrawModalOpen"
+        class="fixed inset-0 z-[10095] flex items-center justify-center bg-slate-950/55 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="regenerate-draw-title"
+        @click.self="closeRegenerateDrawModal(false)"
+      >
+        <div class="relative w-full max-w-md rounded-2xl bg-slate-900 p-5 text-slate-100 shadow-2xl ring-1 ring-white/10 sm:p-6">
+          <h2 id="regenerate-draw-title" class="text-xl font-bold sm:text-2xl">
+            Confirmar nuevo sorteo
+          </h2>
+
+          <p class="mt-3 text-sm leading-6 text-slate-200 sm:mt-4 sm:text-base sm:leading-7">
+            Se generará un nuevo sorteo para esta ronda. El sorteo anterior quedará anulado.
+            ¿Deseas continuar?
+          </p>
+
+          <div class="mt-6 flex flex-col-reverse gap-2.5 sm:mt-7 sm:flex-row sm:justify-end sm:gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-xl border border-indigo-300/70 bg-transparent px-4 py-2.5 text-sm font-semibold text-indigo-100 transition hover:bg-indigo-500/10 sm:px-5"
+              @click="closeRegenerateDrawModal(false)"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-xl border border-indigo-300 bg-indigo-200 px-4 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-indigo-100 sm:px-5"
+              @click="closeRegenerateDrawModal(true)"
+            >
+              Aceptar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
         v-if="roundCompletionModal.show"
         class="fixed inset-0 z-[10090] flex items-center justify-center bg-slate-950/50 p-4"
         role="dialog"
@@ -2192,10 +2248,10 @@ onBeforeUnmount(() => {
 
     <div
       v-if="!isRemoteMode"
-      class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4"
+      class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4"
       :class="isRemoteMode ? 'border-blue-200 bg-blue-50/40' : ''"
     >
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div class="flex-1">
           <label class="block text-sm font-medium text-slate-700 mb-1">
             {{ isRemoteMode ? "Competencia asignada" : "Competencia" }}
@@ -2224,7 +2280,7 @@ onBeforeUnmount(() => {
           v-if="!isRemoteMode"
           type="button"
           @click="openPublicView"
-          class="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:bg-slate-50"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:bg-slate-50 sm:w-auto"
         >
           <EyeIcon class="h-5 w-5 text-slate-700" />
           Vista pública
@@ -2241,7 +2297,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="isRemoteMode && remoteLoading && !remoteContext"
-      class="rounded-2xl border border-slate-200 bg-white px-6 py-8 text-center text-slate-500 shadow-sm"
+      class="rounded-2xl border border-slate-200 bg-white px-4 py-7 text-center text-slate-500 shadow-sm sm:px-6 sm:py-8"
     >
       Cargando asignaciones y formulario de evaluación...
     </div>
@@ -2254,7 +2310,7 @@ onBeforeUnmount(() => {
         Actualizando la categoría seleccionada...
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+      <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
         <div class="mb-3 flex items-center justify-between gap-3">
           <div class="flex items-center gap-2">
             <Squares2X2Icon class="h-5 w-5 text-slate-700" />
@@ -2286,17 +2342,17 @@ onBeforeUnmount(() => {
         <div
           v-if="currentCategories.length"
           ref="catScroller"
-          class="flex gap-4 overflow-x-auto pb-2 scroll-smooth snap-x snap-mandatory"
+          class="flex gap-3 overflow-x-auto pb-2 scroll-smooth snap-x snap-mandatory sm:gap-4"
         >
           <button
             v-for="category in currentCategories"
             :key="category.id"
             type="button"
             @click="pickCategory(category.id)"
-            class="w-[220px] shrink-0 snap-start overflow-hidden rounded-2xl border text-left transition hover:shadow-md"
+            class="w-[200px] shrink-0 snap-start overflow-hidden rounded-2xl border text-left transition hover:shadow-md sm:w-[220px]"
             :class="Number(selectedCategoryId) === Number(category.id) ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
           >
-            <div class="h-[110px] w-full bg-cover bg-center" :style="{ backgroundImage: `url(${categoryThumb(category)})` }" />
+            <div class="h-[98px] w-full bg-cover bg-center sm:h-[110px]" :style="{ backgroundImage: `url(${categoryThumb(category)})` }" />
 
             <div class="p-3">
               <p class="font-semibold text-slate-900 leading-tight">{{ category.nombre }}</p>
@@ -2314,7 +2370,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 items-stretch gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
+      <div class="grid grid-cols-1 items-stretch gap-4 sm:gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(360px,1fr)]">
         <div class="rounded-2xl border border-slate-200 bg-white shadow-sm p-5 sm:p-6">
           <div class="mb-5 flex items-center justify-between gap-3">
             <div class="flex items-center gap-2">
@@ -2792,15 +2848,15 @@ onBeforeUnmount(() => {
             >
               <div class="h-1.5 bg-blue-600"></div>
 
-              <div class="px-5 py-5 sm:px-6">
-                <div class="mb-5 flex items-center justify-between gap-3 text-sm">
+              <div class="px-4 py-4 sm:px-6 sm:py-5">
+                <div class="mb-4 flex flex-col gap-2 text-sm sm:mb-5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                   <span class="text-slate-300">Marcador del enfrentamiento</span>
                   <span class="rounded-full bg-slate-800 px-3 py-1 font-semibold text-slate-100">
                     En registro
                   </span>
                 </div>
 
-                <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
+                <div class="grid grid-cols-1 items-center gap-4 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
                   <div class="min-w-0 text-center">
                     <div class="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-800 text-lg font-black text-blue-200 ring-1 ring-slate-700">
                       A
@@ -2813,7 +2869,7 @@ onBeforeUnmount(() => {
                     </p>
                   </div>
 
-                  <div class="flex items-center justify-center gap-2 sm:gap-4">
+                  <div class="order-first flex items-center justify-center gap-2 sm:order-none sm:gap-4">
                     <input
                       :value="currentFieldValues[scoreFieldForSide('A')]"
                       type="tel"
@@ -3134,7 +3190,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="h-full">
-          <div class="flex h-full flex-col rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+          <div class="flex h-full flex-col rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <div class="mb-3 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
@@ -3145,14 +3201,6 @@ onBeforeUnmount(() => {
                 <span class="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600 ring-1 ring-slate-200">
                   {{ currentSorteo ? currentSorteoLabel : "Sorteo pendiente" }}
                 </span>
-              </div>
-
-              <div
-                v-if="isRemoteMode"
-                class="mx-auto inline-flex items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-blue-50 px-4 py-2 text-sm text-slate-700"
-              >
-                <Squares2X2Icon class="h-4 w-4 text-blue-600" />
-                <span class="font-bold text-slate-900">{{ remoteTeamsCountLabel }}</span>
               </div>
 
               <button

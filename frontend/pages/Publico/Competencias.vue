@@ -32,12 +32,12 @@ const openEventLink = (url) => {
 </script>
 
 <template>
-  <section class="mx-auto max-w-7xl px-6 py-12">
+  <section class="mx-auto max-w-7xl px-3 py-8 sm:px-6 sm:py-12">
     <div class="mb-8">
-      <p class="text-sm font-semibold uppercase tracking-wide text-blue-600">
+      <p class="text-xs font-semibold uppercase tracking-wide text-blue-600 sm:text-sm">
         Club de Robótica ESPOCH
       </p>
-      <h1 class="mt-2 text-3xl font-bold text-slate-900">
+      <h1 class="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
         Competencias
       </h1>
       <p class="mt-2 max-w-2xl text-sm text-slate-600">
@@ -47,18 +47,18 @@ const openEventLink = (url) => {
 
     <div
       v-if="competencias.length === 0"
-      class="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center text-slate-500"
+      class="rounded-2xl border border-dashed border-slate-200 bg-white p-8 text-center text-slate-500 sm:p-10"
     >
       No hay competencias publicadas por el momento.
     </div>
 
-    <div v-else class="grid grid-cols-1 gap-6 md:grid-cols-2">
+    <div v-else class="grid grid-cols-1 gap-4 sm:gap-6 md:grid-cols-2">
       <article
         v-for="competencia in competencias"
         :key="competencia.id"
         class="overflow-hidden rounded-2xl border bg-white shadow-sm"
       >
-        <div class="h-56 bg-slate-100">
+        <div class="h-44 bg-slate-100 sm:h-56">
           <img
             v-if="competencia.imagen_url"
             :src="competencia.imagen_url"
@@ -72,7 +72,7 @@ const openEventLink = (url) => {
           </div>
         </div>
 
-        <div class="space-y-4 p-5">
+        <div class="space-y-4 p-4 sm:p-5">
           <div class="flex flex-wrap items-center gap-2">
             <span
               v-if="competencia.estado"
@@ -86,7 +86,7 @@ const openEventLink = (url) => {
           </div>
 
           <div>
-            <h2 class="text-xl font-bold text-slate-900">
+            <h2 class="text-lg font-bold text-slate-900 sm:text-xl">
               {{ competencia.nombre }}
             </h2>
             <p class="mt-2 text-sm leading-6 text-slate-600">

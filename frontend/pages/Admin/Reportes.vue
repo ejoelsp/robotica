@@ -208,7 +208,7 @@ function formatDate(value) {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+  <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
     <Teleport to="body">
       <transition
         enter-active-class="transition duration-200 ease-out"
@@ -244,7 +244,7 @@ function formatDate(value) {
 
     <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <h1 class="text-2xl font-bold text-slate-900">Reportes</h1>
+        <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Reportes</h1>
         <p class="mt-2 max-w-3xl text-sm text-slate-500">
           Genera reportes PDF para imprimir, firmar manualmente y guardar el acta firmada en el sistema.
         </p>
@@ -252,7 +252,7 @@ function formatDate(value) {
 
       <button
         type="button"
-        class="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+        class="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 sm:w-auto"
         :disabled="loading"
         @click="refreshReportes"
       >
@@ -261,16 +261,16 @@ function formatDate(value) {
       </button>
     </div>
 
-    <div class="grid gap-4 md:grid-cols-3">
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div class="grid gap-3 sm:gap-4 md:grid-cols-3">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <p class="text-sm text-slate-500">Reportes generados</p>
         <p class="mt-4 text-3xl font-semibold text-slate-900">{{ summary.total }}</p>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <p class="text-sm text-slate-500">Pendientes de firma</p>
         <p class="mt-4 text-3xl font-semibold text-amber-700">{{ summary.pendientes }}</p>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <p class="text-sm text-slate-500">Actas firmadas</p>
         <p class="mt-4 text-3xl font-semibold text-emerald-700">{{ summary.firmados }}</p>
       </div>
@@ -284,7 +284,7 @@ function formatDate(value) {
         </h2>
       </div>
 
-      <div class="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
+      <div class="grid gap-4 px-4 py-4 sm:px-5 sm:py-5 md:grid-cols-2 xl:grid-cols-4">
         <div>
           <label class="mb-1 block text-sm font-semibold text-slate-800">Competencia</label>
           <select
@@ -372,7 +372,7 @@ function formatDate(value) {
       </div>
 
       <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
+        <table class="min-w-[980px] w-full text-sm">
           <thead class="bg-slate-50 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
             <tr>
               <th class="px-5 py-3">Reporte</th>

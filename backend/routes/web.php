@@ -190,6 +190,7 @@ Route::middleware('auth')->group(function () {
     // Perfil
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::put('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/photo', [ProfileController::class, 'updatePhoto'])->name('profile.photo');
     Route::put('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
 
     // Logout
@@ -213,6 +214,15 @@ Route::middleware('auth')->group(function () {
                     'user' => $request->user(),
                 ]);
             })->name('profile');
+
+            Route::put('/profile', [ProfileController::class, 'update'])
+                ->name('profile.update');
+
+            Route::post('/profile/photo', [ProfileController::class, 'updatePhoto'])
+                ->name('profile.photo');
+
+            Route::put('/profile/password', [ProfileController::class, 'updatePassword'])
+                ->name('profile.password');
 
 
             // ===============
@@ -508,6 +518,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/juez/profile', function () use ($buildJuezContext) {
             return Inertia::render('Juez/Profile', $buildJuezContext());
         })->name('juez.profile');
+
+        Route::put('/juez/profile', [ProfileController::class, 'update'])
+            ->name('juez.profile.update');
+
+        Route::post('/juez/profile/photo', [ProfileController::class, 'updatePhoto'])
+            ->name('juez.profile.photo');
+
+        Route::put('/juez/profile/password', [ProfileController::class, 'updatePassword'])
+            ->name('juez.profile.password');
     });
 
     Route::middleware(['auth'])->group(function () {

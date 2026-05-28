@@ -110,7 +110,7 @@ function estadoClasses(estado) {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1120px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+  <div class="mx-auto w-full max-w-[1120px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
     <section>
       <h1 class="text-2xl font-bold text-slate-900">Reclamos</h1>
       <p class="mt-1 text-sm text-slate-500">
@@ -126,8 +126,8 @@ function estadoClasses(estado) {
       <p>{{ feedback }}</p>
     </div>
 
-    <section class="grid gap-6 lg:grid-cols-[1fr_360px]">
-      <form class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm" @submit.prevent="enviarReclamo">
+    <section class="grid gap-5 sm:gap-6 lg:grid-cols-[1fr_360px]">
+      <form class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6" @submit.prevent="enviarReclamo">
         <div class="flex items-center gap-3 border-b border-slate-100 pb-4">
           <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
             <DocumentTextIcon class="h-6 w-6 text-blue-600" />
@@ -139,7 +139,7 @@ function estadoClasses(estado) {
         </div>
 
         <div v-if="inscripcionesAprobadas.length" class="mt-5 space-y-5">
-          <div class="grid gap-4 md:grid-cols-2">
+          <div class="grid gap-3 sm:gap-4 md:grid-cols-2">
             <div>
               <label class="mb-1 block text-sm font-semibold text-slate-700">Categoría</label>
               <select
@@ -168,7 +168,7 @@ function estadoClasses(estado) {
             </div>
           </div>
 
-          <div v-if="selectedInscripcion" class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
+          <div v-if="selectedInscripcion" class="grid gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2 sm:p-4">
             <div>
               <p class="text-xs font-semibold uppercase text-slate-500">Evento</p>
               <p class="mt-1 text-sm font-semibold text-slate-900">{{ selectedInscripcion.evento.nombre }}</p>
@@ -218,11 +218,11 @@ function estadoClasses(estado) {
             </div>
           </div>
 
-          <div class="flex flex-wrap justify-end gap-3 border-t border-slate-100 pt-5">
+          <div class="flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:flex-wrap sm:justify-end sm:pt-5">
             <button
               type="button"
               :disabled="!canSubmit"
-              class="inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold sm:w-auto"
               :class="canSubmit ? 'border-blue-200 text-blue-700 hover:bg-blue-50' : 'cursor-not-allowed border-slate-200 text-slate-400'"
               @click="visualizarReclamo"
             >
@@ -232,7 +232,7 @@ function estadoClasses(estado) {
             <button
               type="submit"
               :disabled="!canSubmit || form.processing"
-              class="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold sm:w-auto"
               :class="canSubmit && !form.processing ? 'bg-blue-600 text-white hover:bg-blue-700' : 'cursor-not-allowed bg-slate-300 text-slate-500'"
             >
               <PaperAirplaneIcon class="h-5 w-5" />
@@ -241,7 +241,7 @@ function estadoClasses(estado) {
           </div>
         </div>
 
-        <div v-else class="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+        <div v-else class="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center sm:p-8">
           <p class="text-sm font-semibold text-slate-700">No tienes categorías disponibles para reclamos.</p>
           <p class="mt-1 text-sm text-slate-500">
             Solo aparecen categorías con inscripción confirmada y comprobante de pago aprobado.
@@ -249,7 +249,7 @@ function estadoClasses(estado) {
         </div>
       </form>
 
-      <aside class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <aside class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <h2 class="text-lg font-semibold text-slate-900">Reclamos enviados</h2>
         <div class="mt-4 space-y-3">
           <article

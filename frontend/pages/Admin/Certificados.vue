@@ -348,9 +348,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+  <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
     <section>
-      <h1 class="text-2xl font-bold text-slate-900">Certificados</h1>
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Certificados</h1>
       <p class="mt-1 text-sm text-slate-500">
         Gestiona las plantillas activas para participación y podio por competencia.
       </p>
@@ -363,7 +363,7 @@ onBeforeUnmount(() => {
       {{ page.props.flash.success }}
     </div>
 
-    <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div class="grid gap-4 md:grid-cols-[1fr_240px] md:items-end">
         <div>
           <label class="mb-1 block text-sm font-semibold text-slate-800">Competencia</label>
@@ -389,7 +389,7 @@ onBeforeUnmount(() => {
     </section>
 
     <section class="grid gap-6 xl:grid-cols-[390px_1fr]">
-      <form class="space-y-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm" @submit.prevent="submit">
+      <form class="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" @submit.prevent="submit">
         <div class="flex items-center gap-3">
           <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
             <DocumentArrowUpIcon class="h-6 w-6 text-blue-600" />
@@ -571,7 +571,7 @@ onBeforeUnmount(() => {
       </form>
 
       <div class="space-y-6">
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 class="text-lg font-bold text-slate-900">Vista previa de posiciones</h2>
@@ -616,7 +616,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="divide-y divide-slate-200">
-            <article v-for="plantilla in plantillas" :key="plantilla.id" class="grid gap-4 px-5 py-4 md:grid-cols-[120px_1fr_auto] md:items-center">
+            <article v-for="plantilla in plantillas" :key="plantilla.id" class="grid gap-4 px-4 py-4 sm:px-5 md:grid-cols-[120px_1fr_auto] md:items-center">
               <img :src="plantilla.archivo_url" alt="" class="h-20 w-28 rounded-lg border border-slate-200 object-cover" />
 
               <div>
@@ -633,7 +633,7 @@ onBeforeUnmount(() => {
                 <p class="mt-1 text-sm text-slate-500">Año {{ plantilla.anio || "general" }} - {{ plantilla.created_at }}</p>
               </div>
 
-              <div class="flex flex-wrap gap-2 md:justify-end">
+              <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap md:justify-end">
                 <button
                   type="button"
                   class="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -685,7 +685,7 @@ onBeforeUnmount(() => {
           de la base de datos. ¿Deseas continuar?
         </p>
 
-        <div class="mt-6 grid grid-cols-2 gap-3">
+        <div class="mt-6 grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
           <button
             type="button"
             class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"

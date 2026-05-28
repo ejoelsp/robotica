@@ -1,10 +1,10 @@
 <template>
-  <section class="min-h-[70vh] flex items-center justify-center px-4">
-    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 class="mb-2 text-2xl font-semibold text-slate-900">
+  <section class="flex min-h-[70vh] items-center justify-center px-3 py-6 sm:px-4">
+    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+      <h1 class="mb-2 text-xl font-semibold text-slate-900 sm:text-2xl">
         Crear cuenta
       </h1>
-      <p class="mb-4 text-sm text-slate-500">
+      <p class="mb-4 text-sm text-slate-500 sm:mb-5">
         Regístrate para gestionar tus competencias, inscripciones y resultados del evento.
       </p>
 

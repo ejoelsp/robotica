@@ -43,12 +43,12 @@ const onSubmit = () => {
 </script>
 
 <template>
-  <section class="min-h-[70vh] flex items-center justify-center px-4">
-    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
-      <h1 class="text-2xl font-semibold text-slate-900 mb-2">
+  <section class="flex min-h-[70vh] items-center justify-center px-3 py-6 sm:px-4">
+    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+      <h1 class="mb-2 text-xl font-semibold text-slate-900 sm:text-2xl">
         Iniciar sesión
       </h1>
-      <p class="text-sm text-slate-500 mb-6">
+      <p class="mb-5 text-sm text-slate-500 sm:mb-6">
         Accede a tu cuenta para gestionar competencias, inscripciones y resultados.
       </p>
 
@@ -113,7 +113,7 @@ const onSubmit = () => {
         </div>
 
         <!-- Recordarme -->
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <label class="flex items-center gap-2 text-xs text-slate-600">
             <input
               v-model="form.remember"

@@ -324,9 +324,9 @@ function actionLabel(action) {
 </script>
 
 <template>
-  <div class="lg:px-4 py-6">
+  <div class="px-3 py-5 sm:px-6 sm:py-6 lg:px-4">
     <div class="mb-7">
-      <h1 class="text-2xl font-bold text-slate-900">Control de Acceso</h1>
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Control de Acceso</h1>
       <p class="text-sm text-slate-500">
         Administra usuarios y revisa la auditoría del sistema.
       </p>
@@ -341,16 +341,16 @@ function actionLabel(action) {
     </div>
 
     <div class="mb-6 overflow-x-auto">
-      <div class="inline-flex rounded-full bg-slate-200/70 p-1">
+      <div class="inline-flex w-full rounded-2xl bg-slate-200/70 p-1 sm:w-auto sm:rounded-full">
         <button
-          class="px-4 py-2 text-sm rounded-full transition whitespace-nowrap"
+          class="flex-1 px-4 py-2 text-sm rounded-xl transition whitespace-nowrap sm:flex-none sm:rounded-full"
           :class="activeTab === 'usuarios' ? 'bg-white shadow-sm text-slate-900 font-semibold' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'usuarios'"
         >
           Usuarios
         </button>
         <button
-          class="px-4 py-2 text-sm rounded-full transition whitespace-nowrap"
+          class="flex-1 px-4 py-2 text-sm rounded-xl transition whitespace-nowrap sm:flex-none sm:rounded-full"
           :class="activeTab === 'auditoria' ? 'bg-white shadow-sm text-slate-900 font-semibold' : 'text-slate-600 hover:text-slate-900'"
           @click="activeTab = 'auditoria'"
         >
@@ -369,7 +369,7 @@ function actionLabel(action) {
         </div>
         <button
           type="button"
-          class="inline-flex items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          class="inline-flex w-full items-center justify-center rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto"
           @click="openCreateUser"
         >
           <UserPlusIcon class="w-5 h-5 mr-2" />
@@ -394,8 +394,8 @@ function actionLabel(action) {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <div v-for="item in stats" :key="item.label" class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 sm:gap-4">
+        <div v-for="item in stats" :key="item.label" class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-start justify-between">
             <p class="text-sm font-semibold text-slate-700">{{ item.label }}</p>
             <component :is="item.icon" class="w-5 h-5 text-slate-400" />
@@ -419,7 +419,7 @@ function actionLabel(action) {
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full">
+          <table class="min-w-[920px] w-full">
             <thead class="bg-slate-50">
               <tr class="text-left text-xs font-semibold text-slate-600">
                 <th class="px-5 py-4">Usuario</th>
@@ -516,7 +516,7 @@ function actionLabel(action) {
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full">
+          <table class="min-w-[920px] w-full">
             <thead class="bg-slate-50">
               <tr class="text-left text-xs font-semibold text-slate-600">
                 <th class="px-5 py-4">Fecha</th>
@@ -646,11 +646,11 @@ function actionLabel(action) {
                 La cuenta se crea activa, sin contraseña definitiva y con enlace de activación por correo.
               </div>
 
-              <div class="pt-2 flex justify-end gap-3">
-                <button type="button" class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-sm font-semibold" @click="closeCreateUser">
+              <div class="pt-2 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
+                <button type="button" class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-sm font-semibold sm:w-auto" @click="closeCreateUser">
                   Cancelar
                 </button>
-                <button type="submit" class="inline-flex items-center px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-semibold disabled:opacity-60" :disabled="!canSubmitUser">
+                <button type="submit" class="inline-flex w-full items-center justify-center px-4 py-2.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 text-sm font-semibold disabled:opacity-60 sm:w-auto" :disabled="!canSubmitUser">
                   <PlusIcon class="w-5 h-5 mr-2" />
                   Crear usuario
                 </button>

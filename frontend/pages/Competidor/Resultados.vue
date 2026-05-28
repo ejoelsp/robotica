@@ -90,7 +90,7 @@ function statusClasses(item) {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-6 sm:px-6 lg:px-4">
+    <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
       <section>
         <h1 class="text-2xl font-bold text-slate-900">Mis Resultados</h1>
         <p class="mt-1 text-sm text-slate-500">
@@ -99,11 +99,11 @@ function statusClasses(item) {
       </section>
 
       <section class="grid gap-4 md:grid-cols-3">
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm font-medium text-slate-500">Inscripciones aprobadas</p>
-              <p class="mt-2 text-3xl font-bold text-slate-900">
+              <p class="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
                 {{ summary.total_inscripciones ?? 0 }}
               </p>
             </div>
@@ -113,11 +113,11 @@ function statusClasses(item) {
           </div>
         </div>
 
-        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+        <div class="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm sm:p-5">
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm font-medium text-emerald-700">Con resultado</p>
-              <p class="mt-2 text-3xl font-bold text-emerald-900">
+              <p class="mt-2 text-2xl font-bold text-emerald-900 sm:text-3xl">
                 {{ summary.con_resultado ?? 0 }}
               </p>
             </div>
@@ -127,11 +127,11 @@ function statusClasses(item) {
           </div>
         </div>
 
-        <div class="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+        <div class="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm sm:p-5">
           <div class="flex items-center justify-between gap-4">
             <div>
               <p class="text-sm font-medium text-amber-700">Pendientes</p>
-              <p class="mt-2 text-3xl font-bold text-amber-900">
+              <p class="mt-2 text-2xl font-bold text-amber-900 sm:text-3xl">
                 {{ summary.pendientes ?? 0 }}
               </p>
             </div>
@@ -142,7 +142,7 @@ function statusClasses(item) {
         </div>
       </section>
 
-      <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
         <div class="grid gap-4 md:grid-cols-[1fr_280px] md:items-end">
           <div>
             <h2 class="text-lg font-semibold text-slate-900">Categoría</h2>
@@ -170,7 +170,7 @@ function statusClasses(item) {
         <article
           v-for="item in publishedItems.slice(0, 3)"
           :key="`highlight-${item.inscripcion_id}`"
-          class="rounded-2xl border bg-white p-5 shadow-sm"
+          class="rounded-2xl border bg-white p-4 shadow-sm sm:p-5"
           :class="item.es_podio ? 'border-yellow-300' : 'border-slate-200'"
         >
           <div class="flex items-start justify-between gap-4">
@@ -178,7 +178,7 @@ function statusClasses(item) {
               <p class="truncate text-sm font-semibold text-blue-700">
                 {{ item.categoria_nombre }}
               </p>
-              <h2 class="mt-2 text-xl font-bold text-slate-900">
+              <h2 class="mt-2 text-lg font-bold text-slate-900 sm:text-xl">
                 {{ item.resultado_label }}
               </h2>
               <p class="mt-1 text-sm text-slate-500">
@@ -199,7 +199,7 @@ function statusClasses(item) {
       </section>
 
       <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="border-b border-slate-200 px-5 py-4">
+        <div class="border-b border-slate-200 px-4 py-4 sm:px-5">
           <h2 class="text-lg font-semibold text-slate-900">Resultados</h2>
         </div>
 
@@ -207,11 +207,11 @@ function statusClasses(item) {
           <article
             v-for="item in filteredItems"
             :key="item.inscripcion_id"
-            class="px-5 py-5"
+            class="px-4 py-4 sm:px-5 sm:py-5"
           >
-            <div class="grid gap-5 lg:grid-cols-[2fr_1.4fr_1.1fr_1fr_44px] lg:items-center">
+            <div class="grid gap-4 sm:gap-5 lg:grid-cols-[2fr_1.4fr_1.1fr_1fr_44px] lg:items-center">
               <div class="min-w-0">
-                <h3 class="text-xl font-bold text-slate-900">
+                <h3 class="text-lg font-bold text-slate-900 sm:text-xl">
                   {{ item.categoria_nombre }}
                 </h3>
                 <p class="mt-2 text-sm text-slate-600">
@@ -269,9 +269,9 @@ function statusClasses(item) {
 
             <div
               v-if="isExpanded(item.inscripcion_id)"
-              class="mt-5 overflow-hidden rounded-xl border border-slate-200"
+              class="mt-4 overflow-x-auto rounded-xl border border-slate-200 sm:mt-5"
             >
-              <table class="min-w-full text-sm">
+              <table class="min-w-[860px] w-full text-sm">
                 <thead class="bg-slate-50 text-left text-slate-600">
                   <tr>
                     <th class="px-4 py-3 font-semibold">Ronda</th>
@@ -304,11 +304,11 @@ function statusClasses(item) {
             </div>
           </article>
 
-          <div v-if="!items.length" class="px-5 py-12 text-center text-slate-500">
+          <div v-if="!items.length" class="px-4 py-10 text-center text-slate-500 sm:px-5 sm:py-12">
             Todavía no tienes inscripciones aprobadas para consultar resultados.
           </div>
 
-          <div v-else-if="!filteredItems.length" class="px-5 py-12 text-center text-slate-500">
+          <div v-else-if="!filteredItems.length" class="px-4 py-10 text-center text-slate-500 sm:px-5 sm:py-12">
             No hay resultados para la categoría seleccionada.
           </div>
         </div>

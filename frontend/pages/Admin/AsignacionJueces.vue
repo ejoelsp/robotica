@@ -969,12 +969,12 @@ function requestRemoveRonda(ronda) {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1380px] space-y-6 px-4 py-6 sm:px-6 lg:px-6">
-      <div class="inline-flex rounded-full bg-slate-200 p-1">
+    <div class="mx-auto w-full max-w-[1380px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-6">
+      <div class="inline-flex w-full flex-wrap rounded-2xl bg-slate-200 p-1 sm:w-auto sm:rounded-full">
         <button
           type="button"
           @click="activeWindow = 'asignaciones'"
-          class="rounded-full px-6 py-3 text-sm font-semibold transition"
+          class="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none sm:rounded-full sm:px-6 sm:py-3"
           :class="activeWindow === 'asignaciones' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
         >
           Asignaciones
@@ -982,7 +982,7 @@ function requestRemoveRonda(ronda) {
         <button
           type="button"
           @click="activeWindow = 'jueces'"
-          class="rounded-full px-6 py-3 text-sm font-semibold transition"
+          class="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none sm:rounded-full sm:px-6 sm:py-3"
           :class="activeWindow === 'jueces' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
         >
           Jueces Activos
@@ -990,7 +990,7 @@ function requestRemoveRonda(ronda) {
         <button
           type="button"
           @click="activeWindow = 'formato'"
-          class="rounded-full px-6 py-3 text-sm font-semibold transition"
+          class="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none sm:rounded-full sm:px-6 sm:py-3"
           :class="activeWindow === 'formato' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
         >
           Formato de registro
@@ -998,7 +998,7 @@ function requestRemoveRonda(ronda) {
         <button
           type="button"
           @click="activeWindow = 'rondas'"
-          class="rounded-full px-6 py-3 text-sm font-semibold transition"
+          class="flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold transition sm:flex-none sm:rounded-full sm:px-6 sm:py-3"
           :class="activeWindow === 'rondas' ? 'bg-white text-slate-950 shadow-sm' : 'text-slate-600 hover:text-slate-900'"
         >
           Gestión de rondas
@@ -1093,7 +1093,7 @@ function requestRemoveRonda(ronda) {
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full">
+          <table class="min-w-[860px] w-full">
             <thead class="bg-slate-50">
               <tr class="text-left text-[13px] tracking-wide text-slate-900">
                 <th class="px-6 py-4 font-semibold">Foto de perfil</th>
@@ -1199,7 +1199,7 @@ function requestRemoveRonda(ronda) {
           <div class="flex w-full justify-end md:w-auto">
             <button
               @click="openNuevoJuezModal"
-              class="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-white transition hover:bg-blue-700"
+              class="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-white transition hover:bg-blue-700 md:w-auto"
             >
               <UserPlusIcon class="h-5 w-5" />
               Nuevo Juez
@@ -1420,7 +1420,7 @@ function requestRemoveRonda(ronda) {
           </div>
 
           <div class="overflow-x-auto">
-            <table class="min-w-full">
+            <table class="min-w-[980px] w-full">
               <thead class="bg-slate-50">
                 <tr class="text-left text-[13px] tracking-wide text-slate-900">
                   <th class="px-6 py-4 font-semibold">Categoría</th>
@@ -1536,7 +1536,7 @@ function requestRemoveRonda(ronda) {
               </div>
 
               <form @submit.prevent="submitAsignacion" class="flex min-h-0 flex-col">
-                <div class="space-y-5 overflow-y-auto p-6">
+                <div class="space-y-5 overflow-y-auto p-4 sm:p-6">
                   <div
                     v-if="nuevaAsignacionForm.errors.general"
                     class="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
@@ -1657,10 +1657,10 @@ function requestRemoveRonda(ronda) {
                   </div>
                 </div>
 
-                <div class="flex justify-end gap-3 border-t border-slate-200 p-6">
+                <div class="flex flex-col-reverse gap-2 border-t border-slate-200 p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-6">
                   <button
                     @click="closeAsignacionModal"
-                    class="rounded-2xl border border-slate-200 px-5 py-3 text-slate-700 transition hover:bg-slate-50"
+                    class="w-full rounded-2xl border border-slate-200 px-5 py-3 text-slate-700 transition hover:bg-slate-50 sm:w-auto"
                     type="button"
                   >
                     Cancelar
@@ -1669,7 +1669,7 @@ function requestRemoveRonda(ronda) {
                   <button
                     type="submit"
                     :disabled="!canSubmitAsignacion"
-                    class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                   >
                     <CheckCircleIcon class="h-5 w-5" />
                     {{
@@ -1739,12 +1739,12 @@ function requestRemoveRonda(ronda) {
                 </p>
               </div>
 
-              <div class="flex justify-end gap-3 border-t border-slate-200 p-6">
+              <div class="flex flex-col-reverse gap-2 border-t border-slate-200 p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-6">
                 <button
                   type="button"
                   @click="closeEstadoJuezModal"
                   :disabled="!!updatingJuezId"
-                  class="rounded-2xl border border-slate-200 px-5 py-3 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="w-full rounded-2xl border border-slate-200 px-5 py-3 text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                 >
                   Cancelar
                 </button>
@@ -1753,7 +1753,7 @@ function requestRemoveRonda(ronda) {
                   type="button"
                   @click.prevent.stop="confirmarEstadoJuez"
                   :disabled="!!updatingJuezId"
-                  class="inline-flex items-center gap-2 rounded-2xl px-5 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+                  class="inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                   :class="estadoModalAction === 'activar' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-amber-600 hover:bg-amber-700'"
                 >
                   <ShieldCheckIcon class="h-5 w-5" />
@@ -1868,10 +1868,10 @@ function requestRemoveRonda(ronda) {
                   </div>
                 </div>
 
-                <div class="flex justify-end gap-3 border-t border-slate-200 p-5">
+                <div class="flex flex-col-reverse gap-2 border-t border-slate-200 p-4 sm:flex-row sm:justify-end sm:gap-3 sm:p-5">
                   <button
                     @click="closeNuevoJuezModal"
-                    class="rounded-xl border border-slate-200 px-5 py-2.5 text-slate-700 transition hover:bg-slate-50"
+                    class="w-full rounded-xl border border-slate-200 px-5 py-2.5 text-slate-700 transition hover:bg-slate-50 sm:w-auto"
                     type="button"
                   >
                     Cancelar
@@ -1880,7 +1880,7 @@ function requestRemoveRonda(ronda) {
                   <button
                     type="submit"
                     :disabled="!canSubmitJuez"
-                    class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                   >
                     <CheckCircleIcon class="h-5 w-5" />
                     {{ juezSubmitting ? "Guardando..." : "Crear juez" }}

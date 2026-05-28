@@ -74,8 +74,8 @@ watch(
 
 <template>
   <div class="min-h-screen bg-slate-100">
-    <div class="mx-auto w-full max-w-[1180px] space-y-6 px-4 py-8 sm:px-6 lg:px-4">
-      <div class="flex flex-col gap-4 rounded-3xl bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500 px-6 py-8 text-white shadow-lg md:flex-row md:items-end md:justify-between">
+    <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-8 lg:px-4">
+      <div class="flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500 px-4 py-6 text-white shadow-lg sm:rounded-3xl sm:px-6 sm:py-8 md:flex-row md:items-end md:justify-between">
         <div>
           <p class="text-sm uppercase tracking-[0.2em] text-white/80">Club de Robótica ESPOCH</p>
           <h1 class="mt-2 text-3xl font-bold leading-tight">Resultados Publicados</h1>
@@ -86,15 +86,15 @@ watch(
 
         <Link
           href="/"
-          class="inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-white/35 transition hover:bg-white/25"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white/15 px-4 py-2.5 text-sm font-semibold text-white ring-1 ring-white/35 transition hover:bg-white/25 sm:w-auto"
         >
           <EyeIcon class="h-5 w-5" />
           Volver al inicio
         </Link>
       </div>
 
-      <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+        <div class="grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3">
           <div>
             <label class="mb-1 block text-sm font-medium text-slate-700">Competencia</label>
             <select
@@ -142,37 +142,37 @@ watch(
       </div>
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div class="rounded-3xl border border-blue-200 bg-blue-50 p-5">
+        <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4 sm:rounded-3xl sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm font-semibold text-blue-700">Categoría</p>
-              <p class="mt-3 text-xl font-bold text-blue-900">
+              <p class="mt-2 text-lg font-bold text-blue-900 sm:mt-3 sm:text-xl">
                 {{ vista.scope?.categoria_nombre || "Sin selección" }}
               </p>
             </div>
-            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-100">
-              <TrophyIcon class="h-7 w-7 text-blue-700" />
+            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 sm:h-14 sm:w-14 sm:rounded-2xl">
+              <TrophyIcon class="h-6 w-6 text-blue-700 sm:h-7 sm:w-7" />
             </div>
           </div>
         </div>
 
-        <div class="rounded-3xl border border-slate-200 bg-white p-5">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 sm:rounded-3xl sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm font-semibold text-slate-700">Última publicación</p>
-              <p class="mt-3 text-base font-bold text-slate-900">
+              <p class="mt-2 text-sm font-bold text-slate-900 sm:mt-3 sm:text-base">
                 {{ formatUpdatedAt(vista.summary?.updated_at) }}
               </p>
             </div>
-            <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
-              <ClockIcon class="h-7 w-7 text-slate-700" />
+            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 sm:h-14 sm:w-14 sm:rounded-2xl">
+              <ClockIcon class="h-6 w-6 text-slate-700 sm:h-7 sm:w-7" />
             </div>
           </div>
         </div>
       </div>
 
       <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="border-b border-slate-200 px-6 py-4">
+        <div class="border-b border-slate-200 px-4 py-4 sm:px-6">
           <h2 class="text-lg font-semibold text-slate-900">
             {{ competencias.find((item) => Number(item.id) === Number(selectedCompetition))?.nombre || "Resultados" }}
           </h2>
@@ -182,13 +182,13 @@ watch(
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full text-sm">
+          <table class="min-w-[920px] w-full text-sm">
             <thead class="bg-white">
               <tr class="border-b border-slate-200 text-left text-black">
                 <th class="w-[110px] px-6 py-4 font-medium">Posición</th>
-                <th class="px-6 py-4 font-medium">Equipo</th>
+                <th class="px-3 py-3 font-medium sm:px-6 sm:py-4">Equipo</th>
                 <th class="px-6 py-4 font-medium">Institución</th>
-                <th class="px-6 py-4 font-medium">Resultado</th>
+                <th class="px-3 py-3 font-medium sm:px-6 sm:py-4">Resultado</th>
               </tr>
             </thead>
 
@@ -198,21 +198,21 @@ watch(
                 :key="`${row.posicion}-${row.equipo_nombre}`"
                 class="hover:bg-slate-50/60"
               >
-                <td class="px-6 py-4">
+                <td class="px-3 py-3 sm:px-6 sm:py-4">
                   <span class="font-semibold text-slate-900">{{ row.posicion }}</span>
                 </td>
-                <td class="px-6 py-4">
+                <td class="px-3 py-3 sm:px-6 sm:py-4">
                   <p class="font-medium text-slate-900">{{ row.equipo_nombre }}</p>
                   <p v-if="row.nota" class="mt-1 text-xs font-semibold text-amber-700">
                     {{ row.nota }}
                   </p>
                 </td>
-                <td class="px-6 py-4 text-slate-600">{{ row.institucion || "Sin institucion" }}</td>
-                <td class="px-6 py-4 text-slate-900">{{ publishedResultLabel(row) }}</td>
+                <td class="px-3 py-3 text-slate-600 sm:px-6 sm:py-4">{{ row.institucion || "Sin institucion" }}</td>
+                <td class="px-3 py-3 text-slate-900 sm:px-6 sm:py-4">{{ publishedResultLabel(row) }}</td>
               </tr>
 
               <tr v-if="!vista.rows?.length">
-                <td colspan="4" class="px-6 py-10 text-center text-slate-500">
+                <td colspan="4" class="px-3 py-8 text-center text-slate-500 sm:px-6 sm:py-10">
                   No hay podio publicado para los filtros seleccionados.
                 </td>
               </tr>

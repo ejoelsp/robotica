@@ -916,11 +916,11 @@ function requestRemoveRonda(ronda) {
 
 <template>
   <div class="w-full">
-    <div class="mx-auto w-full max-w-[1180px] px-4 sm:px-6 lg:px-4 py-6 space-y-6">
+    <div class="mx-auto w-full max-w-[1180px] px-3 py-5 space-y-5 sm:px-6 sm:py-6 sm:space-y-6 lg:px-4">
       <!-- Header -->
       <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 class="text-2xl font-bold text-slate-900">Gestión de Categorías</h1>
+          <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Gestión de Categorías</h1>
           <p class="text-sm text-slate-500">Administra las categorías para la competencia</p>
 
           <!-- Selector competencia -->
@@ -952,8 +952,8 @@ function requestRemoveRonda(ronda) {
       </div>
 
       <!-- Stats -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-3 md:gap-4">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm font-semibold text-slate-900">Categorías Totales</p>
@@ -966,7 +966,7 @@ function requestRemoveRonda(ronda) {
           <p class="text-3xl font-semibold text-slate-900 mt-4">{{ stats.total }}</p>
         </div>
 
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm font-semibold text-slate-900">Categorías Activas</p>
@@ -979,7 +979,7 @@ function requestRemoveRonda(ronda) {
           <p class="text-3xl font-semibold text-slate-900 mt-4">{{ stats.active }}</p>
         </div>
 
-        <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-sm font-semibold text-slate-900">Categorías Inactivas</p>
@@ -1014,7 +1014,7 @@ function requestRemoveRonda(ronda) {
         </div>
 
         <div class="overflow-x-auto">
-          <table class="min-w-full text-sm">
+          <table class="min-w-[980px] w-full text-sm">
             <thead class="bg-white">
               <tr class="text-left text-black border-b border-slate-200">
                 <th class="px-6 py-4 font-medium">Categoría</th>
@@ -1140,7 +1140,7 @@ function requestRemoveRonda(ronda) {
                 </button>
               </div>
 
-              <div class="p-5 space-y-4 overflow-y-auto">
+              <div class="p-4 space-y-4 overflow-y-auto sm:p-5">
                 <div>
                   <label class="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
                   <input
@@ -1275,11 +1275,11 @@ function requestRemoveRonda(ronda) {
                 </div>
               </div>
 
-              <div class="p-5 border-t border-slate-200 flex justify-end gap-3">
+              <div class="border-t border-slate-200 p-4 flex flex-col-reverse gap-2 sm:p-5 sm:flex-row sm:justify-end sm:gap-3">
                 <button
                   type="button"
                   @click="closeModal"
-                  class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+                  class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition sm:w-auto"
                 >
                   Cancelar
                 </button>
@@ -1288,7 +1288,7 @@ function requestRemoveRonda(ronda) {
                   type="button"
                   @click="save"
                   :disabled="!canSaveCategory || form.processing"
-                  class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600"
+                  class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600 sm:w-auto"
                 >
                   <CheckCircleIcon class="w-5 h-5" />
                   {{ isEditing ? "Guardar Cambios" : "Crear Categoría" }}
@@ -1307,7 +1307,7 @@ function requestRemoveRonda(ronda) {
 
       <div class="relative grid h-full w-full place-items-center p-4 sm:p-6">
         <div class="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-          <div class="flex items-start justify-between gap-4 border-b border-slate-200 p-5">
+          <div class="flex items-start justify-between gap-4 border-b border-slate-200 p-4 sm:p-5">
             <div>
               <h2 class="text-lg font-semibold text-slate-900">Gestión de rondas</h2>
               <p class="mt-1 text-sm text-slate-500">
@@ -1324,7 +1324,7 @@ function requestRemoveRonda(ronda) {
             </button>
           </div>
 
-          <div class="grid min-h-0 grid-cols-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[1fr_1.25fr]">
+          <div class="grid min-h-0 grid-cols-1 gap-4 overflow-y-auto p-4 sm:gap-5 sm:p-5 lg:grid-cols-[1fr_1.25fr]">
             <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <h3 class="font-semibold text-slate-900">
                   {{ rondaEditingId ? "Editar ronda" : "Nueva ronda" }}
@@ -1435,7 +1435,7 @@ function requestRemoveRonda(ronda) {
                     </span>
                   </label>
 
-                  <div class="flex gap-3 pt-2">
+                  <div class="flex flex-col gap-2 pt-2 sm:flex-row sm:gap-3">
                     <button
                       type="button"
                       @click="saveRonda"
@@ -1449,7 +1449,7 @@ function requestRemoveRonda(ronda) {
                     <button
                       type="button"
                       @click="resetRondaForm"
-                      class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:bg-slate-50"
+                      class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 transition hover:bg-slate-50 sm:min-w-[110px]"
                     >
                       Limpiar
                     </button>
@@ -1548,7 +1548,7 @@ function requestRemoveRonda(ronda) {
     <div v-if="alertModal.show" class="fixed inset-0 z-[10040] grid place-items-center p-4">
       <div class="absolute inset-0 bg-black/40" @click="closeAlertModal"></div>
 
-      <div class="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl p-6">
+      <div class="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white p-4 shadow-xl sm:p-6">
         <div class="flex items-start gap-3">
           <div
             class="h-11 w-11 rounded-2xl flex items-center justify-center shrink-0"
@@ -1569,12 +1569,12 @@ function requestRemoveRonda(ronda) {
           </div>
         </div>
 
-        <div class="mt-6 flex justify-end gap-3">
+        <div class="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end sm:gap-3">
           <button
             v-if="alertModal.cancelText"
             type="button"
             @click="closeAlertModal"
-            class="px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition"
+            class="w-full px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition sm:w-auto"
           >
             {{ alertModal.cancelText }}
           </button>
@@ -1582,7 +1582,7 @@ function requestRemoveRonda(ronda) {
           <button
             type="button"
             @click="confirmAlertModal"
-            class="px-4 py-2.5 rounded-xl text-white transition"
+            class="w-full px-4 py-2.5 rounded-xl text-white transition sm:w-auto"
             :class="alertModal.variant === 'danger' ? 'bg-red-600 hover:bg-red-700' : 'bg-slate-900 hover:bg-slate-800'"
           >
             {{ alertModal.confirmText }}
