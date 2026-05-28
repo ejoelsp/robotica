@@ -3,18 +3,20 @@ import vue from "@vitejs/plugin-vue";
 import laravel from "laravel-vite-plugin";
 import path from "path";
 
-const backendPath = path.resolve(__dirname, "../backend");
+const isProdServer = process.env.NODE_ENV === "production";
+const backendPublic = isProdServer
+  ? "/var/www/robotica/backend/public"
+  : path.resolve(__dirname, "../backend/public");
 
 export default defineConfig({
-  envDir: backendPath,
+  envDir: path.resolve(__dirname, "../backend"),
   plugins: [
     vue(),
     laravel({
       input: ["main.js", "styles/app.css"],
-        //input: ["../frontend/main.js", "../frontend/styles/app.css"],
-      publicDirectory: `${backendPath}/public`,
+      publicDirectory: backendPublic,
       buildDirectory: "build",
-      refresh: [`${backendPath}/resources/views/**/*.blade.php`],
+      refresh: [path.resolve(__dirname, "../backend/resources/views/**/*.blade.php")],
     }),
   ],
   server: { hmr: { host: "localhost" } },
