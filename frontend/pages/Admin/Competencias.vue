@@ -104,6 +104,14 @@ const committeeForm = useForm({
 
 const fechaErrors = ref({ inicio: "", fin: "" });
 const enlaceError = ref("");
+const committeeTouchedFields = ref({
+  nombres: false,
+  apellidos: false,
+  correo: false,
+  rol_comite: false,
+});
+const committeeNamePattern = /^[\p{L}\s]+$/u;
+const committeeEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const formatFechaRango = (inicio, fin) => {
   if (!inicio) return "Fecha por definir";
@@ -167,24 +175,107 @@ const isFormValid = computed(() => {
   return !!(camposRequeridos && sinErrores);
 });
 
-const committeeEmailError = computed(() => {
-  const correo = (committeeForm.correo || "").trim();
-
-  if (!correo) return "";
-
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(correo) ? "" : "Ingresa un correo válido. Ejemplo: nombre@dominio.com";
-});
 
 const isCommitteeFormValid = computed(() => {
+  const committeeFieldErrors = {};
+  const nombres = (committeeForm.nombres || "").trim();
+  const apellidos = (committeeForm.apellidos || "").trim();
+  const correo = (committeeForm.correo || "").trim();
+  const rolComite = (committeeForm.rol_comite || "").trim();
+
+  if (!nombres) {
+    committeeFieldErrors.nombres = "El nombre es obligatorio.";
+  } else if (!committeeNamePattern.test(nombres)) {
+    committeeFieldErrors.nombres = "El nombre solo puede contener letras y espacios.";
+  }
+
+  if (!apellidos) {
+    committeeFieldErrors.apellidos = "El apellido es obligatorio.";
+  } else if (!committeeNamePattern.test(apellidos)) {
+    committeeFieldErrors.apellidos = "El apellido solo puede contener letras y espacios.";
+  }
+
+  if (!correo) {
+    committeeFieldErrors.correo = "El correo electrónico es obligatorio.";
+  } else if (!committeeEmailPattern.test(correo)) {
+    committeeFieldErrors.correo = "Ingresa un correo electrónico válido.";
+  }
+
+  if (!rolComite) {
+    committeeFieldErrors.rol_comite = "El rol dentro del comité es obligatorio.";
+  } else if (!committeeNamePattern.test(rolComite)) {
+    committeeFieldErrors.rol_comite = "El rol dentro del comité solo puede contener letras y espacios.";
+  }
+
   return !!(
     committeeForm.nombres.trim() &&
     committeeForm.apellidos.trim() &&
+    committeeForm.correo.trim() &&
     committeeForm.rol_comite.trim() &&
-    !committeeEmailError.value &&
+    Object.keys(committeeFieldErrors).length === 0 &&
     !committeePhotoError.value
   );
 });
+
+const committeeFieldErrors = computed(() => {
+  const errors = {};
+  const nombres = (committeeForm.nombres || "").trim();
+  const apellidos = (committeeForm.apellidos || "").trim();
+  const correo = (committeeForm.correo || "").trim();
+  const rolComite = (committeeForm.rol_comite || "").trim();
+
+  if (!nombres) {
+    errors.nombres = "El nombre es obligatorio.";
+  } else if (!committeeNamePattern.test(nombres)) {
+    errors.nombres = "El nombre solo puede contener letras y espacios.";
+  }
+
+  if (!apellidos) {
+    errors.apellidos = "El apellido es obligatorio.";
+  } else if (!committeeNamePattern.test(apellidos)) {
+    errors.apellidos = "El apellido solo puede contener letras y espacios.";
+  }
+
+  if (!correo) {
+    errors.correo = "El correo electrónico es obligatorio.";
+  } else if (!committeeEmailPattern.test(correo)) {
+    errors.correo = "Ingresa un correo electrónico válido.";
+  }
+
+  if (!rolComite) {
+    errors.rol_comite = "El rol dentro del comité es obligatorio.";
+  } else if (!committeeNamePattern.test(rolComite)) {
+    errors.rol_comite = "El rol dentro del comité solo puede contener letras y espacios.";
+  }
+
+  return errors;
+});
+
+const visibleCommitteeFieldError = (field) => {
+  return committeeTouchedFields.value[field]
+    ? committeeFieldErrors.value[field] || committeeForm.errors[field]
+    : committeeForm.errors[field];
+};
+
+const markCommitteeTouched = (field) => {
+  committeeTouchedFields.value[field] = true;
+  if (committeeForm.errors[field]) committeeForm.clearErrors(field);
+};
+
+const sanitizeCommitteeName = (field) => {
+  committeeForm[field] = (committeeForm[field] || "").replace(/[^\p{L}\s]/gu, "");
+  if (committeeForm.errors[field]) committeeForm.clearErrors(field);
+};
+
+const sanitizeCommitteeEmail = () => {
+  committeeForm.correo = (committeeForm.correo || "").replace(/\s/g, "").toLowerCase();
+  if (committeeForm.errors.correo) committeeForm.clearErrors("correo");
+};
+
+const sanitizeCommitteeRole = () => {
+  committeeForm.rol_comite = (committeeForm.rol_comite || "").replace(/[^\p{L}\s]/gu, "");
+  if (committeeForm.errors.rol_comite) committeeForm.clearErrors("rol_comite");
+};
 
 const validarFechas = () => {
   const hoy = new Date().toISOString().split("T")[0];
@@ -273,6 +364,12 @@ const resetCommitteeForm = () => {
   committeeEditingId.value = null;
   committeeExistingPhotoUrl.value = "";
   committeePhotoError.value = "";
+  committeeTouchedFields.value = {
+    nombres: false,
+    apellidos: false,
+    correo: false,
+    rol_comite: false,
+  };
   revokeCommitteePreviewUrl();
 
   if (committeePhotoInput.value) {
@@ -388,6 +485,12 @@ const openCommitteeEdit = (member) => {
   committeeForm.foto = null;
   committeeExistingPhotoUrl.value = member?.foto_url ?? "";
   committeePhotoError.value = "";
+  committeeTouchedFields.value = {
+    nombres: false,
+    apellidos: false,
+    correo: false,
+    rol_comite: false,
+  };
   revokeCommitteePreviewUrl();
 
   if (committeePhotoInput.value) {
@@ -443,6 +546,13 @@ const submitForm = () => {
 };
 
 const submitCommitteeForm = () => {
+  committeeTouchedFields.value = {
+    nombres: true,
+    apellidos: true,
+    correo: true,
+    rol_comite: true,
+  };
+
   if (!selectedCommitteeCompetition.value || !isCommitteeFormValid.value) return;
 
   const competitionId = selectedCommitteeCompetition.value.id;
@@ -938,7 +1048,7 @@ onBeforeUnmount(() => {
                 >
                   <UserGroupIcon class="mx-auto h-10 w-10 text-slate-300" />
                   <p class="mt-3 text-sm font-semibold text-slate-700">
-                    Aun no hay integrantes registrados.
+                    Aún no hay integrantes registrados.
                   </p>
                   <p class="mt-1 text-xs text-slate-500">
                     Agrega integrantes para mostrarlos luego en Contacto.
@@ -1011,9 +1121,12 @@ onBeforeUnmount(() => {
                         v-model="committeeForm.nombres"
                         type="text"
                         class="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                        :class="visibleCommitteeFieldError('nombres') ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200'"
+                        @input="sanitizeCommitteeName('nombres')"
+                        @blur="markCommitteeTouched('nombres')"
                       />
-                      <p v-if="committeeForm.errors.nombres" class="mt-1 text-xs text-red-600">
-                        {{ committeeForm.errors.nombres }}
+                      <p v-if="visibleCommitteeFieldError('nombres')" class="mt-1 text-xs text-red-600">
+                        {{ visibleCommitteeFieldError('nombres') }}
                       </p>
                     </div>
 
@@ -1023,40 +1136,45 @@ onBeforeUnmount(() => {
                         v-model="committeeForm.apellidos"
                         type="text"
                         class="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                        :class="visibleCommitteeFieldError('apellidos') ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200'"
+                        @input="sanitizeCommitteeName('apellidos')"
+                        @blur="markCommitteeTouched('apellidos')"
                       />
-                      <p v-if="committeeForm.errors.apellidos" class="mt-1 text-xs text-red-600">
-                        {{ committeeForm.errors.apellidos }}
+                      <p v-if="visibleCommitteeFieldError('apellidos')" class="mt-1 text-xs text-red-600">
+                        {{ visibleCommitteeFieldError('apellidos') }}
                       </p>
                     </div>
                   </div>
 
                   <div>
-                    <label class="text-xs font-medium text-slate-700">Correo</label>
+                    <label class="text-xs font-medium text-slate-700">Correo electrónico</label>
                     <input
                       v-model="committeeForm.correo"
                       type="email"
                       class="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
-                      :class="committeeEmailError ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200'"
+                      :class="visibleCommitteeFieldError('correo') ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200'"
                       placeholder="correo@espoch.edu.ec"
+                      @input="sanitizeCommitteeEmail"
+                      @blur="markCommitteeTouched('correo')"
                     />
-                    <p v-if="committeeEmailError" class="mt-1 text-xs text-red-600">
-                      {{ committeeEmailError }}
-                    </p>
-                    <p v-else-if="committeeForm.errors.correo" class="mt-1 text-xs text-red-600">
-                      {{ committeeForm.errors.correo }}
+                    <p v-if="visibleCommitteeFieldError('correo')" class="mt-1 text-xs text-red-600">
+                      {{ visibleCommitteeFieldError('correo') }}
                     </p>
                   </div>
 
                   <div>
-                    <label class="text-xs font-medium text-slate-700">Rol dentro del comite</label>
+                    <label class="text-xs font-medium text-slate-700">Rol dentro del comité</label>
                     <input
                       v-model="committeeForm.rol_comite"
                       type="text"
                       class="mt-1 w-full rounded-xl border bg-white px-3 py-2 text-sm"
+                      :class="visibleCommitteeFieldError('rol_comite') ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200'"
                       placeholder="Coordinador general"
+                      @input="sanitizeCommitteeRole"
+                      @blur="markCommitteeTouched('rol_comite')"
                     />
-                    <p v-if="committeeForm.errors.rol_comite" class="mt-1 text-xs text-red-600">
-                      {{ committeeForm.errors.rol_comite }}
+                    <p v-if="visibleCommitteeFieldError('rol_comite')" class="mt-1 text-xs text-red-600">
+                      {{ visibleCommitteeFieldError('rol_comite') }}
                     </p>
                   </div>
 

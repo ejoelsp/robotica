@@ -15,7 +15,7 @@
         {{ registerError }}
       </div>
 
-      <form class="space-y-4" @submit.prevent="onSubmit">
+      <form class="space-y-4" novalidate @submit.prevent="onSubmit">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label class="mb-1 block text-sm font-medium text-slate-700" for="name">
@@ -25,12 +25,17 @@
               id="name"
               v-model="form.name"
               type="text"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+              :class="[
+                'w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 border',
+                visibleFieldError('name')
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                  : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500',
+              ]"
               @input="sanitizeName"
+              @blur="markTouched('name')"
             />
-            <p v-if="form.errors.name" class="mt-1 text-xs text-red-500">
-              {{ form.errors.name }}
+            <p v-if="visibleFieldError('name')" class="mt-1 text-xs text-red-500">
+              {{ visibleFieldError('name') }}
             </p>
           </div>
 
@@ -42,12 +47,17 @@
               id="last_name"
               v-model="form.last_name"
               type="text"
-              class="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
+              :class="[
+                'w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 border',
+                visibleFieldError('last_name')
+                  ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                  : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500',
+              ]"
               @input="sanitizeLastName"
+              @blur="markTouched('last_name')"
             />
-            <p v-if="form.errors.last_name" class="mt-1 text-xs text-red-500">
-              {{ form.errors.last_name }}
+            <p v-if="visibleFieldError('last_name')" class="mt-1 text-xs text-red-500">
+              {{ visibleFieldError('last_name') }}
             </p>
           </div>
         </div>
@@ -62,14 +72,15 @@
             type="email"
             :class="[
               'w-full rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 border',
-              form.errors.email
+              visibleFieldError('email')
                 ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
                 : 'border-slate-300 focus:border-blue-500 focus:ring-blue-500',
             ]"
-            required
+            @input="sanitizeEmail"
+            @blur="markTouched('email')"
           />
-          <p v-if="form.errors.email" class="mt-1 text-xs text-red-500">
-            {{ form.errors.email }}
+          <p v-if="visibleFieldError('email')" class="mt-1 text-xs text-red-500">
+            {{ visibleFieldError('email') }}
           </p>
         </div>
 
@@ -203,20 +214,62 @@ if (old.value.email) {
 }
 
 const formError = ref('');
+const namePattern = /^[\p{L}\s]+$/u;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const touchedFields = ref({
+  name: false,
+  last_name: false,
+  email: false,
+});
+
+const fieldErrors = computed(() => {
+  const errors = {};
+  const name = form.name.trim();
+  const lastName = form.last_name.trim();
+  const email = form.email.trim();
+
+  if (!name) {
+    errors.name = 'El nombre es obligatorio.';
+  } else if (!namePattern.test(name)) {
+    errors.name = 'El nombre solo puede contener letras y espacios.';
+  }
+
+  if (!lastName) {
+    errors.last_name = 'El apellido es obligatorio.';
+  } else if (!namePattern.test(lastName)) {
+    errors.last_name = 'El apellido solo puede contener letras y espacios.';
+  }
+
+  if (!email) {
+    errors.email = 'El correo electrónico es obligatorio.';
+  } else if (!emailPattern.test(email)) {
+    errors.email = 'Ingresa un correo electrónico válido.';
+  }
+
+  return errors;
+});
+
+const visibleFieldError = (field) =>
+  touchedFields.value[field] ? fieldErrors.value[field] || form.errors[field] : form.errors[field];
+
+const markTouched = (field) => {
+  touchedFields.value[field] = true;
+  if (form.errors[field]) form.clearErrors(field);
+};
+
 const sanitizeName = () => {
-  form.name = form.name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-zÑñ\s]/g, '')
-    .toUpperCase();
+  form.name = form.name.replace(/[^\p{L}\s]/gu, '');
+  if (form.errors.name) form.clearErrors('name');
 };
 
 const sanitizeLastName = () => {
-  form.last_name = form.last_name
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^A-Za-zÑñ\s]/g, '')
-    .toUpperCase();
+  form.last_name = form.last_name.replace(/[^\p{L}\s]/gu, '');
+  if (form.errors.last_name) form.clearErrors('last_name');
+};
+
+const sanitizeEmail = () => {
+  form.email = form.email.replace(/\s/g, '').toLowerCase();
+  if (form.errors.email) form.clearErrors('email');
 };
 
 const passwordLengthOk = computed(() => form.password.length >= 8);
@@ -237,6 +290,15 @@ const ruleClass = (ok) => (ok ? 'text-green-600' : 'text-slate-500');
 const onSubmit = () => {
   formError.value = '';
   form.clearErrors();
+  touchedFields.value = {
+    name: true,
+    last_name: true,
+    email: true,
+  };
+
+  if (Object.keys(fieldErrors.value).length > 0) {
+    return;
+  }
 
   if (
     !passwordLengthOk.value ||
@@ -254,9 +316,6 @@ const onSubmit = () => {
     formError.value = 'Las contraseñas no coinciden.';
     return;
   }
-
-  form.name = form.name.toUpperCase();
-  form.last_name = form.last_name.toUpperCase();
 
   form.post('/register', {
     preserveScroll: true,

@@ -200,6 +200,15 @@ const form = useForm({
   pdf: null,
   imagen: null,
 });
+const touchedNombre = ref(false);
+const nombrePattern = /^[\p{L}\s]+$/u;
+
+const nombreFieldError = computed(() => {
+  const nombre = String(form.nombre ?? "").trim();
+  if (!nombre) return "El nombre es obligatorio.";
+  if (!nombrePattern.test(nombre)) return "El nombre solo puede contener letras y espacios.";
+  return "";
+});
 
 watch(competenciaId, (id) => {
   form.competencia_id = id;
@@ -380,6 +389,7 @@ function openEdit(cat) {
 function closeModal() {
   isModalOpen.value = false;
   form.clearErrors();
+  touchedNombre.value = false;
   resetForCreate();
 }
 
@@ -405,6 +415,7 @@ function resetForCreate() {
 
   if (pdfInput.value) pdfInput.value.value = null;
   if (imageInput.value) imageInput.value.value = null;
+  touchedNombre.value = false;
   isHydratingForm.value = false;
 }
 
@@ -433,7 +444,13 @@ function resetForEdit(cat) {
 
   if (pdfInput.value) pdfInput.value.value = null;
   if (imageInput.value) imageInput.value.value = null;
+  touchedNombre.value = false;
   isHydratingForm.value = false;
+}
+
+function sanitizeNombreCategoria() {
+  form.nombre = String(form.nombre ?? "").replace(/[^\p{L}\s]/gu, "");
+  if (form.errors.nombre) form.clearErrors("nombre");
 }
 
 function onToggleEstado() {
@@ -454,16 +471,15 @@ function onToggleEstado() {
 // CREATE / UPDATE
 // =====================================================
 async function save() {
+  touchedNombre.value = true;
+
   const compId = Number(form.competencia_id);
   if (!Number.isInteger(compId) || compId <= 0) {
     showToast("Selecciona una competencia válida.", "warning", 3500);
     return;
   }
 
-  if (!form.nombre?.trim()) {
-    showToast("Falta el nombre de la categoría.", "warning", 3500);
-    return;
-  }
+  if (nombreFieldError.value) return;
 
   const costo = Number(form.costo_inscripcion ?? 0);
   if (!Number.isFinite(costo) || costo < 0 || costo > 999999.99) {
@@ -1145,9 +1161,13 @@ function requestRemoveRonda(ronda) {
                   <label class="block text-sm font-medium text-slate-700 mb-1">Nombre</label>
                   <input
                     v-model="form.nombre"
-                    class="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    class="w-full px-3 py-2.5 rounded-xl border focus:outline-none focus:ring-2"
+                    :class="(touchedNombre && nombreFieldError) || form.errors.nombre ? 'border-red-300 focus:border-red-500 focus:ring-red-500' : 'border-slate-200 focus:ring-blue-500'"
+                    @input="sanitizeNombreCategoria"
+                    @blur="touchedNombre = true"
                     placeholder="Ej: Seguidor de Línea"
                   />
+                  <p v-if="touchedNombre && nombreFieldError" class="text-xs text-red-600 mt-1">{{ nombreFieldError }}</p>
                   <p v-if="form.errors.nombre" class="text-xs text-red-600 mt-1">{{ form.errors.nombre }}</p>
                   <p v-if="form.errors.nombre_key" class="text-xs text-red-600 mt-1">{{ form.errors.nombre_key }}</p>
                   <p v-if="form.errors.estado" class="text-xs text-red-600 mt-1">{{ form.errors.estado }}</p>
