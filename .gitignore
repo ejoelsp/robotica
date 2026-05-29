@@ -30,6 +30,7 @@ backend/vendor/
 # Build / dev server
 frontend/dist/
 frontend/.vite/
+frontend/var/
 backend/public/build/
 backend/public/hot
 backend/public/storage
