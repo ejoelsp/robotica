@@ -118,7 +118,10 @@ class CategoriaController
     public function store(StoreCategoriaRequest $request)
     {
         try {
-            DB::transaction(function () use ($request) {
+            $competenciaId = (int) $request->integer('competencia_id');
+            $mecanismoCalificacionId = $this->resolverMecanismoCalificacionId($request);
+
+            DB::transaction(function () use ($request, &$competenciaId, $mecanismoCalificacionId) {
                 $data = [
                     'competencia_id' => $request->integer('competencia_id'),
                     'nombre' => (string) $request->string('nombre'),
@@ -139,11 +142,13 @@ class CategoriaController
                 }
 
                 $categoria = Categoria::create($data);
+                $competenciaId = (int) $categoria->competencia_id;
 
-                $this->upsertConfigCalificacion($categoria, $request);
+                $this->upsertConfigCalificacion($categoria, $request, $mecanismoCalificacionId);
             });
 
-            return back()->with('success', 'Categoría creada correctamente.');
+            return redirect("/admin/categorias?competencia_id={$competenciaId}", 303)
+                ->with('success', 'Categoría creada correctamente.');
         } catch (QueryException $e) {
             if (($e->errorInfo[0] ?? null) === '23505') {
                 throw ValidationException::withMessages([
@@ -667,10 +672,10 @@ class CategoriaController
         return is_array($evaluacion) ? $evaluacion : [];
     }
 
-    private function upsertConfigCalificacion(Categoria $categoria, Request $request): void
+    private function upsertConfigCalificacion(Categoria $categoria, Request $request, int $mecanismoCalificacionId): void
     {
         $mecanismo = DB::table('catalogo.mecanismos_calificacion')
-            ->where('id', $request->integer('mecanismo_calificacion_id'))
+            ->where('id', $mecanismoCalificacionId)
             ->first();
 
         $codigo = (string) ($mecanismo->codigo ?? '');
@@ -704,7 +709,7 @@ class CategoriaController
         ConfigCalificacion::updateOrCreate(
             ['categoria_id' => $categoria->id],
             [
-                'mecanismo_calificacion_id' => $request->integer('mecanismo_calificacion_id'),
+                'mecanismo_calificacion_id' => $mecanismoCalificacionId,
                 'unidad_resultado' => $request->filled('unidad_resultado')
                     ? (string) $request->input('unidad_resultado')
                     : null,
@@ -716,6 +721,37 @@ class CategoriaController
                 'reglas_json' => $reglas,
             ]
         );
+    }
+
+    private function resolverMecanismoCalificacionId(Request $request): int
+    {
+        $mecanismoId = (int) $request->input('mecanismo_calificacion_id', 0);
+
+        if ($mecanismoId > 0) {
+            $existe = DB::table('catalogo.mecanismos_calificacion')
+                ->where('id', $mecanismoId)
+                ->where('activo', true)
+                ->exists();
+
+            if ($existe) {
+                return $mecanismoId;
+            }
+        }
+
+        $fallback = (int) (
+            DB::table('catalogo.mecanismos_calificacion')
+                ->where('activo', true)
+                ->orderBy('id')
+                ->value('id') ?? 0
+        );
+
+        if ($fallback > 0) {
+            return $fallback;
+        }
+
+        throw ValidationException::withMessages([
+            'mecanismo_calificacion_id' => 'No existen mecanismos de calificación activos para registrar la categoría.',
+        ]);
     }
 
     private function camposPorMecanismo(string $codigo): array

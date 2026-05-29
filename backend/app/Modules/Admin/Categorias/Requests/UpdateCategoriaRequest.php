@@ -47,7 +47,7 @@ class UpdateCategoriaRequest extends FormRequest
             'visible_publico_en_vivo' => ['required', 'boolean'],
             'permite_edicion_juez' => ['required', 'boolean'],
             'pdf' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
-            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ];
     }
 
@@ -102,6 +102,9 @@ class UpdateCategoriaRequest extends FormRequest
             'permite_edicion_juez.required' => 'Falta definir si el juez puede editar.',
             'pdf.mimes' => 'El archivo debe ser PDF.',
             'pdf.max' => 'El PDF no debe superar 10MB.',
+            'imagen.image' => 'La imagen de la categoría debe ser un archivo de imagen válido.',
+            'imagen.mimes' => 'La imagen debe estar en formato JPG, JPEG, PNG o WEBP.',
+            'imagen.max' => 'La imagen de la categoría no debe superar 10MB.',
         ];
     }
 }

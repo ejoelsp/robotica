@@ -522,48 +522,62 @@ async function save() {
 
   ensureCategoryEvaluationDefaults();
 
-  if (!form.mecanismo_calificacion_id) {
-    showToast("Selecciona un mecanismo de calificación.", "warning", 3500);
-    return;
-  }
-
   // CREATE
   if (!isEditing.value) {
-    form.transform((data) => ({
-      ...data,
-      costo_inscripcion: data.costo_inscripcion ?? 0,
-      max_integrantes: Number(data.max_integrantes ?? 2),
-      mecanismo_calificacion_id: data.mecanismo_calificacion_id || defaultMechanismId(),
-      unidad_resultado: "",
-      orden_ranking: "desc",
-      requiere_aprobacion_admin: data.requiere_aprobacion_admin ? 1 : 0,
-      visible_publico_en_vivo: data.visible_publico_en_vivo ? 1 : 0,
-      permite_edicion_juez: data.permite_edicion_juez ? 1 : 0,
-    }));
+    const targetCompetenciaId = Number(form.competencia_id);
 
-    form.post("/admin/categorias", {
-      forceFormData: true,
-      preserveScroll: true,
-      onSuccess: () => {
-        if (form.hasErrors || showFormErrors()) {
-          isModalOpen.value = true;
-          return;
-        }
+    try {
+      form.processing = true;
+      form.clearErrors();
 
-        showToast("Categoría creada", "success", 3000);
-        closeModal();
+      const fd = new FormData();
+      fd.append("competencia_id", String(form.competencia_id ?? ""));
+      fd.append("nombre", String(form.nombre ?? ""));
+      fd.append("costo_inscripcion", String(form.costo_inscripcion ?? 0));
+      fd.append("max_integrantes", String(form.max_integrantes ?? 2));
+      fd.append("estado", form.estado ? "1" : "0");
+      fd.append("mecanismo_calificacion_id", Number(form.mecanismo_calificacion_id || 0) > 0
+        ? String(form.mecanismo_calificacion_id)
+        : "");
+      fd.append("unidad_resultado", "");
+      fd.append("orden_ranking", "desc");
+      fd.append("requiere_aprobacion_admin", form.requiere_aprobacion_admin ? "1" : "0");
+      fd.append("visible_publico_en_vivo", form.visible_publico_en_vivo ? "1" : "0");
+      fd.append("permite_edicion_juez", form.permite_edicion_juez ? "1" : "0");
+      if (form.pdf) fd.append("pdf", form.pdf);
+      if (form.imagen) fd.append("imagen", form.imagen);
 
-        router.reload({
+      await axios.post("/admin/categorias", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      showToast("Categoría creada", "success", 3000);
+      closeModal();
+
+      router.get(
+        "/admin/categorias",
+        { competencia_id: targetCompetenciaId },
+        {
+          replace: true,
           preserveScroll: true,
-          preserveState: true,
-          only: ["categorias", "competenciaId", "flash"],
-        });
-      },
-      onError: () => {
+          preserveState: false,
+          only: ["competenciaId", "categorias", "competencias", "mecanismosCalificacion", "flash"],
+        }
+      );
+    } catch (err) {
+      if (err?.response?.status === 422 && err.response.data?.errors) {
+        form.setError(err.response.data.errors);
         isModalOpen.value = true;
         showFormErrors();
-      },
-    });
+        return;
+      }
+
+      console.error(err);
+      showToast(err?.response?.data?.message || "No se pudo crear la categoría.", "error", 4500);
+      isModalOpen.value = true;
+    } finally {
+      form.processing = false;
+    }
 
     return;
   }

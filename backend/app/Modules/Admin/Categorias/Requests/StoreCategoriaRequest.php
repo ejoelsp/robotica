@@ -26,8 +26,19 @@ class StoreCategoriaRequest extends FormRequest
             )
         ", [$nombre]);
 
+        $mecanismoId = (int) $this->input('mecanismo_calificacion_id', 0);
+        if ($mecanismoId <= 0) {
+            $mecanismoId = (int) (
+                DB::table('catalogo.mecanismos_calificacion')
+                    ->where('activo', true)
+                    ->orderBy('id')
+                    ->value('id') ?? 0
+            );
+        }
+
         $this->merge([
             'nombre_key' => $nombreKey,
+            'mecanismo_calificacion_id' => $mecanismoId,
         ]);
     }
 
@@ -40,14 +51,14 @@ class StoreCategoriaRequest extends FormRequest
             'costo_inscripcion' => ['required', 'numeric', 'min:0', 'max:999999.99'],
             'max_integrantes' => ['required', 'integer', Rule::in([1, 2, 3, 4, 5])],
             'estado' => ['required', 'boolean'],
-            'mecanismo_calificacion_id' => ['required', 'integer'],
+            'mecanismo_calificacion_id' => ['nullable', 'integer', 'min:1'],
             'unidad_resultado' => ['nullable', 'string', 'max:30'],
             'orden_ranking' => ['nullable', 'string', Rule::in(['asc', 'desc'])],
             'requiere_aprobacion_admin' => ['required', 'boolean'],
             'visible_publico_en_vivo' => ['required', 'boolean'],
             'permite_edicion_juez' => ['required', 'boolean'],
             'pdf' => ['required', 'file', 'mimes:pdf', 'max:10240'],
-            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'imagen' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240'],
         ];
     }
 
@@ -99,6 +110,9 @@ class StoreCategoriaRequest extends FormRequest
             'pdf.required' => 'El PDF es obligatorio.',
             'pdf.mimes' => 'El archivo debe ser PDF.',
             'pdf.max' => 'El PDF no debe superar 10MB.',
+            'imagen.image' => 'La imagen de la categoría debe ser un archivo de imagen válido.',
+            'imagen.mimes' => 'La imagen debe estar en formato JPG, JPEG, PNG o WEBP.',
+            'imagen.max' => 'La imagen de la categoría no debe superar 10MB.',
         ];
     }
 }

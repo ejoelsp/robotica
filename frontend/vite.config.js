@@ -3,10 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import laravel from "laravel-vite-plugin";
 import path from "path";
 
-const isProdServer = process.env.NODE_ENV === "production";
-const backendPublic = isProdServer
-  ? "/var/www/robotica/backend/public"
-  : path.resolve(__dirname, "../backend/public");
+const backendPublic = path.resolve(__dirname, "../backend/public");
 
 export default defineConfig({
   envDir: path.resolve(__dirname, "../backend"),

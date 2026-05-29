@@ -15,11 +15,9 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        
+        $this->call(\Database\Seeders\MecanismosCalificacionSeeder::class);
         $this->call(\Database\Seeders\RolesSeeder::class);
 
-        
-        
         // User::factory(10)->create();
 
 
