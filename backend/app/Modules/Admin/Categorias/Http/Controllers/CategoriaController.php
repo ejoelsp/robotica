@@ -164,6 +164,7 @@ class CategoriaController
     {
         $cat = Categoria::findOrFail($id);
         $inscripcionesCount = $cat->inscripciones()->count();
+        $mecanismoCalificacionId = $this->resolverMecanismoCalificacionId($request);
 
         if (! $request->boolean('estado') && $inscripcionesCount > 0) {
             throw ValidationException::withMessages([
@@ -172,7 +173,7 @@ class CategoriaController
         }
 
         try {
-            DB::transaction(function () use ($request, $cat) {
+            DB::transaction(function () use ($request, $cat, $mecanismoCalificacionId) {
                 $data = [
                     'competencia_id' => $request->integer('competencia_id'),
                     'nombre' => (string) $request->string('nombre'),
@@ -200,7 +201,7 @@ class CategoriaController
 
                 $cat->update($data);
 
-                $this->upsertConfigCalificacion($cat, $request);
+                $this->upsertConfigCalificacion($cat, $request, $mecanismoCalificacionId);
             });
 
             return back()->with('success', 'Categoría actualizada correctamente.');
