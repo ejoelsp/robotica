@@ -201,12 +201,12 @@ const form = useForm({
   imagen: null,
 });
 const touchedNombre = ref(false);
-const nombrePattern = /^[\p{L}\s]+$/u;
+const nombrePattern = /^[\p{L}\p{N}\s]+$/u;
 
 const nombreFieldError = computed(() => {
   const nombre = String(form.nombre ?? "").trim();
   if (!nombre) return "El nombre es obligatorio.";
-  if (!nombrePattern.test(nombre)) return "El nombre solo puede contener letras y espacios.";
+  if (!nombrePattern.test(nombre)) return "El nombre solo puede contener letras, numeros y espacios.";
   return "";
 });
 
@@ -449,7 +449,7 @@ function resetForEdit(cat) {
 }
 
 function sanitizeNombreCategoria() {
-  form.nombre = String(form.nombre ?? "").replace(/[^\p{L}\s]/gu, "");
+  form.nombre = String(form.nombre ?? "").replace(/[^\p{L}\p{N}\s]/gu, "");
   if (form.errors.nombre) form.clearErrors("nombre");
 }
 
