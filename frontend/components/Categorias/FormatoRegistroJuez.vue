@@ -16,6 +16,7 @@ const categories = computed(() => props.categorias ?? []);
 
 const formatoSavingId = ref(null);
 const formatoForms = ref({});
+const formatoBaselines = ref({});
 const formatoSearch = ref("");
 const activeFormatoCategoryId = ref(null);
 const toast = ref({ show: false, type: "info", message: "" });
@@ -568,6 +569,13 @@ function syncFormatoForms() {
   }
 
   formatoForms.value = next;
+
+  const baselines = {};
+  for (const cat of categories.value) {
+    if (!next[cat.id]) continue;
+    baselines[cat.id] = JSON.stringify(comparableFormatoPayload(next[cat.id]));
+  }
+  formatoBaselines.value = baselines;
 }
 
 watch(
@@ -776,8 +784,11 @@ function comparableFormatoPayload(raw) {
 function hasFormatoChanges(cat) {
   if (!cat?.id || !formatoForms.value[cat.id]) return false;
 
-  return JSON.stringify(comparableFormatoPayload(formatoForms.value[cat.id]))
-    !== JSON.stringify(comparableFormatoPayload(defaultFormatoForm(cat)));
+  const current = JSON.stringify(comparableFormatoPayload(formatoForms.value[cat.id]));
+  const baseline = formatoBaselines.value[cat.id]
+    ?? JSON.stringify(comparableFormatoPayload(defaultFormatoForm(cat)));
+
+  return current !== baseline;
 }
 
 async function saveFormato(cat) {
@@ -793,6 +804,7 @@ async function saveFormato(cat) {
 
   try {
     await axios.put(`/admin/categorias/${cat.id}/formato-registro`, normalizeFormatoPayload(current));
+    formatoBaselines.value[cat.id] = JSON.stringify(comparableFormatoPayload(current));
     showToast("Formato de registro actualizado", "success", 3000);
     router.reload({
       preserveScroll: true,
