@@ -464,22 +464,40 @@ function cloneFields(fields) {
 
 function ensureIndividualCriteriaTieBreakTimeField(fields) {
   const cloned = cloneFields(fields);
+  const remaining = [];
+  let timeField = null;
+  let observationsField = null;
 
-  if (cloned.some((field) => field.key === "tiempo" && field.type === "duration")) {
-    return cloned;
+  for (const field of cloned) {
+    if (!timeField && field.key === "tiempo" && field.type === "duration") {
+      timeField = field;
+      continue;
+    }
+
+    if (!observationsField && field.key === "observaciones") {
+      observationsField = field;
+      continue;
+    }
+
+    remaining.push(field);
   }
 
-  const observationsIndex = cloned.findIndex((field) => field.key === "observaciones");
-  const insertAt = observationsIndex >= 0 ? observationsIndex : cloned.length;
+  if (!timeField) {
+    timeField = {
+      key: "tiempo",
+      type: "duration",
+      label: "Tiempo de recorrido",
+      required: false,
+    };
+  }
 
-  cloned.splice(insertAt, 0, {
-    key: "tiempo",
-    type: "duration",
-    label: "Tiempo de recorrido",
-    required: false,
-  });
+  remaining.push(timeField);
 
-  return cloned;
+  if (observationsField) {
+    remaining.push(observationsField);
+  }
+
+  return remaining;
 }
 
 function fieldsForFormatoTemplate(plantilla, fields) {
@@ -647,7 +665,10 @@ function addRubricaCriterion(cat) {
   if (!current) return;
 
   const criteriaCount = current.campos_json.filter((field) => field.type === "number").length + 1;
-  current.campos_json.splice(Math.max(current.campos_json.length - 1, 0), 0, {
+  const fixedTailStart = current.campos_json.findIndex((field) => field.key === "tiempo" || field.key === "observaciones");
+  const insertAt = fixedTailStart >= 0 ? fixedTailStart : current.campos_json.length;
+
+  current.campos_json.splice(insertAt, 0, {
     key: `criterio_${criteriaCount}`,
     type: "number",
     label: `Criterio ${criteriaCount}`,

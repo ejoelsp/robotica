@@ -255,6 +255,21 @@ class CategoriaController
             ->where('activo', true)
             ->first();
 
+        // Compatibilidad con catálogos antiguos que aún usan códigos legacy.
+        if (! $mecanismo) {
+            $legacyCodes = $validated['mecanismo_codigo'] === 'tabla_evaluacion'
+                ? ['puntaje_jueces', 'dron_destreza', 'mixto']
+                : ['solo_registro', 'cronometro', 'dron_carrera', 'combate_llaves', 'soccer_goles'];
+
+            $mecanismo = DB::table('catalogo.mecanismos_calificacion')
+                ->whereIn('codigo', $legacyCodes)
+                ->where('activo', true)
+                ->orderByRaw('CASE codigo '
+                    . collect($legacyCodes)->values()->map(fn (string $code, int $index) => "WHEN '{$code}' THEN {$index}")->implode(' ')
+                    . ' ELSE 999 END')
+                ->first();
+        }
+
         if (! $mecanismo) {
             throw ValidationException::withMessages([
                 'mecanismo_codigo' => 'El formato seleccionado no esta disponible.',
