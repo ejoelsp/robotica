@@ -56,7 +56,7 @@ const submit = () => {
   <div class="bg-slate-50">
     <div class="flex min-h-[calc(100vh-160px)] items-center justify-center px-4 py-8">
       <div class="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-xl">
-        <h1 class="text-2xl font-bold text-slate-900">Activación Juez</h1>
+        <h1 class="text-2xl font-bold text-slate-900">Activación de cuenta</h1>
         <p class="mt-2 text-sm text-slate-500">
           Define tu contraseña para completar el acceso.
         </p>
