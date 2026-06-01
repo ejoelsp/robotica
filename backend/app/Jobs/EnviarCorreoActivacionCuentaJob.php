@@ -49,7 +49,7 @@ class EnviarCorreoActivacionCuentaJob implements ShouldBeEncrypted, ShouldQueue
         $fullName = trim((string) $user->name . ' ' . (string) $user->last_name);
 
         $html = "
-            <h2>Activacion de cuenta</h2>
+            <h2>Activación de cuenta</h2>
             <p>Hola {$fullName},</p>
             <p>Se ha creado tu cuenta en el sistema del Club de Robótica ESPOCH.</p>
             <p>Para activar tu cuenta y definir tu contraseña, haz clic en el siguiente enlace:</p>
