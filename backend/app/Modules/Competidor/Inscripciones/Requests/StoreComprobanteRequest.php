@@ -36,7 +36,7 @@ class StoreComprobanteRequest extends FormRequest
                 'required',
                 'file',
                 'mimes:jpg,jpeg,png,pdf',
-                'max:10240',
+                'max:20480',
             ],
         ];
     }
@@ -55,7 +55,7 @@ class StoreComprobanteRequest extends FormRequest
             'comprobante.required' => 'Debes subir un comprobante.',
             'comprobante.file' => 'El comprobante debe ser un archivo válido.',
             'comprobante.mimes' => 'El comprobante debe estar en formato JPG, JPEG, PNG o PDF.',
-            'comprobante.max' => 'El comprobante no puede superar los 10MB.',
+            'comprobante.max' => 'El comprobante no puede superar los 20MB.',
         ];
     }
 }
