@@ -138,6 +138,23 @@ class ReporteActaController extends Controller
         );
     }
 
+    public function destroy(ActaReporte $acta): JsonResponse
+    {
+        if ($acta->archivo_generado_path) {
+            Storage::disk('public')->delete($acta->archivo_generado_path);
+        }
+
+        if ($acta->archivo_firmado_path) {
+            Storage::disk('public')->delete($acta->archivo_firmado_path);
+        }
+
+        $acta->delete();
+
+        return response()->json([
+            'message' => 'Reporte eliminado correctamente.',
+        ]);
+    }
+
     private function competencias()
     {
         return DB::table('catalogo.competencias')

@@ -23,9 +23,13 @@ const props = defineProps({
     type: String,
     default: "create",
   },
+  backendErrors: {
+    type: Object,
+    default: () => ({}),
+  },
 });
 
-const emit = defineEmits(["close", "submitted"]);
+const emit = defineEmits(["close", "submitted", "clear-backend-error"]);
 
 const isEditMode = computed(() => props.mode === "edit");
 
@@ -189,12 +193,26 @@ const errors = computed(() => {
   return result;
 });
 
+const displayedErrors = computed(() => {
+  const backendErrors = props.backendErrors ?? {};
+
+  return {
+    ...errors.value,
+    institucion: errors.value.institucion || backendErrors.institucion || "",
+    equipo: errors.value.equipo || backendErrors.nombre_equipo || "",
+    capitan: errors.value.capitan || backendErrors.nombre_capitan || "",
+    prototipo: errors.value.prototipo || backendErrors.nombre_prototipo || "",
+    contacto: errors.value.contacto || backendErrors.telefono_contacto || "",
+    integrantes: errors.value.integrantes,
+  };
+});
+
 const hasValidationErrors = computed(() => {
-  const fieldErrors = Object.entries(errors.value)
+  const fieldErrors = Object.entries(displayedErrors.value)
     .filter(([key]) => key !== "integrantes")
     .some(([, value]) => Boolean(value));
 
-  return fieldErrors || errors.value.integrantes.some(Boolean);
+  return fieldErrors || displayedErrors.value.integrantes.some(Boolean);
 });
 
 const formCompleto = computed(() => {
@@ -216,6 +234,10 @@ const formCompleto = computed(() => {
 
 const handleClose = () => {
   emit("close");
+};
+
+const clearBackendError = (field) => {
+  emit("clear-backend-error", field);
 };
 
 const handleSubmit = () => {
@@ -283,12 +305,13 @@ const handleSubmit = () => {
                   </label>
                   <input
                     v-model="form.institucion"
-                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': errors.institucion }"
+                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': displayedErrors.institucion }"
                     type="text"
                     placeholder="Nombre de tu institución/club"
                     class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    @input="clearBackendError('institucion')"
                   />
-                  <p v-if="errors.institucion" class="mt-1 text-xs text-red-600">{{ errors.institucion }}</p>
+                  <p v-if="displayedErrors.institucion" class="mt-1 text-xs text-red-600">{{ displayedErrors.institucion }}</p>
                 </div>
 
                 <div>
@@ -297,12 +320,13 @@ const handleSubmit = () => {
                   </label>
                   <input
                     v-model="form.equipo"
-                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': errors.equipo }"
+                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': displayedErrors.equipo }"
                     type="text"
                     placeholder="Nombre de tu equipo"
                     class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    @input="clearBackendError('nombre_equipo')"
                   />
-                  <p v-if="errors.equipo" class="mt-1 text-xs text-red-600">{{ errors.equipo }}</p>
+                  <p v-if="displayedErrors.equipo" class="mt-1 text-xs text-red-600">{{ displayedErrors.equipo }}</p>
                 </div>
 
                 <div>
@@ -311,12 +335,13 @@ const handleSubmit = () => {
                   </label>
                   <input
                     v-model="form.capitan"
-                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': errors.capitan }"
+                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': displayedErrors.capitan }"
                     type="text"
                     placeholder="Nombres y apellidos del capitán"
                     class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    @input="clearBackendError('nombre_capitan')"
                   />
-                  <p v-if="errors.capitan" class="mt-1 text-xs text-red-600">{{ errors.capitan }}</p>
+                  <p v-if="displayedErrors.capitan" class="mt-1 text-xs text-red-600">{{ displayedErrors.capitan }}</p>
                 </div>
 
                 <div>
@@ -325,12 +350,13 @@ const handleSubmit = () => {
                   </label>
                   <input
                     v-model="form.prototipo"
-                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': errors.prototipo }"
+                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': displayedErrors.prototipo }"
                     type="text"
                     placeholder="Nombre del robot/prototipo"
                     class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    @input="clearBackendError('nombre_prototipo')"
                   />
-                  <p v-if="errors.prototipo" class="mt-1 text-xs text-red-600">{{ errors.prototipo }}</p>
+                  <p v-if="displayedErrors.prototipo" class="mt-1 text-xs text-red-600">{{ displayedErrors.prototipo }}</p>
                 </div>
 
                 <div>
@@ -339,15 +365,15 @@ const handleSubmit = () => {
                   </label>
                   <input
                     v-model="form.contacto"
-                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': errors.contacto }"
+                    :class="{ 'border-red-300 focus:border-red-500 focus:ring-red-100': displayedErrors.contacto }"
                     type="tel"
                     inputmode="tel"
                     placeholder="+593999999999"
                     class="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    @input="onContactoInput"
+                    @input="onContactoInput($event); clearBackendError('telefono_contacto')"
                     @keydown="prevenirEspacioContacto"
                   />
-                  <p v-if="errors.contacto" class="mt-1 text-xs text-red-600">{{ errors.contacto }}</p>
+                  <p v-if="displayedErrors.contacto" class="mt-1 text-xs text-red-600">{{ displayedErrors.contacto }}</p>
                 </div>
 
                 <div v-if="integrantesAdicionales > 0" class="md:col-span-2">

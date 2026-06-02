@@ -9,6 +9,7 @@ use App\Models\ClasificacionPublicacionHist;
 use App\Models\ConfigCalificacion;
 use App\Models\Inscripcion;
 use App\Models\Resultado;
+use App\Models\RondaParticipante;
 use App\Models\Ronda;
 use App\Models\Sorteo;
 use App\Models\User;
@@ -53,6 +54,7 @@ class ClasificacionConsolidacionService
             'summary' => [
                 'total_inscripciones' => count($items),
                 'con_resultado' => collect($items)->where('estado_resultado', 'publicado')->count(),
+                'no_clasificados' => collect($items)->where('estado_resultado', 'no_clasificado')->count(),
                 'cerrados' => collect($items)->where('estado_publicacion', 'cerrado')->count(),
                 'pendientes' => collect($items)->whereIn('estado_resultado', ['pendiente', 'pendiente_publicacion'])->count(),
             ],
@@ -1336,6 +1338,14 @@ class ClasificacionConsolidacionService
             ])
             ->first();
 
+        $exclusion = RondaParticipante::query()
+            ->with('ronda:id,nombre,orden,es_final')
+            ->where('inscripcion_id', $inscripcion->id)
+            ->where('estado', 'excluido')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->first();
+
         $evaluacionesRegistradas = Resultado::query()
             ->where('competencia_id', $inscripcion->competencia_id)
             ->where('categoria_id', $inscripcion->categoria_id)
@@ -1345,7 +1355,7 @@ class ClasificacionConsolidacionService
 
         $estadoResultado = $destacado
             ? 'publicado'
-            : ($evaluacionesRegistradas ? 'pendiente_publicacion' : 'pendiente');
+            : ($exclusion ? 'no_clasificado' : ($evaluacionesRegistradas ? 'pendiente_publicacion' : 'pendiente'));
 
         return [
             'inscripcion_id' => (int) $inscripcion->id,
@@ -1362,9 +1372,11 @@ class ClasificacionConsolidacionService
             'estado_publicacion' => $destacado ? (string) $destacado->estado_publicacion : null,
             'resultado_label' => $destacado && $config
                 ? $this->formatearResultadoClasificacion($destacado, $config)
-                : null,
+                : ($exclusion ? 'No clasificado' : null),
             'posicion' => $destacado ? (int) $destacado->posicion : null,
-            'ronda_nombre' => $destacado ? (string) ($destacado->ronda?->nombre ?? 'Ronda') : null,
+            'ronda_nombre' => $destacado
+                ? (string) ($destacado->ronda?->nombre ?? 'Ronda')
+                : ($exclusion ? (string) ($exclusion->ronda?->nombre ?? 'Ronda') : null),
             'es_podio' => $destacado ? (int) $destacado->posicion <= 3 : false,
             'publicado_at' => optional($destacado?->publicado_at)->toIso8601String(),
             'updated_at' => optional($destacado?->updated_at)->toIso8601String(),
@@ -1383,6 +1395,22 @@ class ClasificacionConsolidacionService
                     'updated_at' => optional($clasificacion->updated_at)->toIso8601String(),
                 ])
                 ->values()
+                ->when($exclusion && $clasificaciones->isEmpty(), function ($collection) use ($exclusion) {
+                    return $collection->push([
+                        'id' => 0,
+                        'ronda_id' => (int) $exclusion->ronda_id,
+                        'ronda_nombre' => (string) ($exclusion->ronda?->nombre ?? 'Ronda'),
+                        'posicion' => null,
+                        'resultado_label' => 'No clasificado',
+                        'puntaje_total' => null,
+                        'tiempo_total' => null,
+                        'penal_total' => null,
+                        'estado_publicacion' => 'cerrado',
+                        'publicado_at' => optional($exclusion->updated_at)->toIso8601String(),
+                        'updated_at' => optional($exclusion->updated_at)->toIso8601String(),
+                        'estado_resultado' => 'no_clasificado',
+                    ]);
+                })
                 ->all(),
         ];
     }
@@ -2107,4 +2135,5 @@ class ClasificacionConsolidacionService
 
         return sprintf('%02dh %02dm %02ds', $hours, $minutes, $seconds);
     }
+
 }

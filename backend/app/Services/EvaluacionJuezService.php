@@ -139,6 +139,12 @@ class EvaluacionJuezService
             'sorteo' => $rondaSeleccionadaId
                 ? $this->getSorteoVigente((int) $rondaSeleccionadaId)
                 : null,
+            'participantes_sorteo' => $categoriaSeleccionadaId && $rondaSeleccionadaId
+                ? $this->getParticipantesSorteo(
+                    (int) $categoriaSeleccionadaId,
+                    (int) $rondaSeleccionadaId
+                )
+                : [],
             'bloqueo_registro' => $bloqueoRegistro,
             'equipos' => $categoriaSeleccionadaId && $rondaSeleccionadaId
                 ? $this->getEquiposPorEvaluar(
@@ -244,6 +250,8 @@ class EvaluacionJuezService
 
             $sorteo->detalles()->createMany($detalles);
 
+            $this->sincronizarParticipantesSorteo($ronda, $detalles);
+
             if ($tipoSorteo === 'enfrentamiento') {
                 $this->actualizarMetadataRondaEnfrentamiento($ronda, count($detalles));
             }
@@ -252,6 +260,76 @@ class EvaluacionJuezService
         });
 
         return $this->serializarSorteo($sorteo);
+    }
+
+    public function excluirParticipanteDelSorteo(User $juez, int $rondaId, int $inscripcionId, ?string $sessionId = null): array
+    {
+        $ronda = Ronda::query()->with('categoria.configCalificacion.mecanismo')->find($rondaId);
+
+        if (! $ronda || ! $ronda->categoria) {
+            throw ValidationException::withMessages([
+                'ronda_id' => 'La ronda seleccionada no existe o no tiene categoria asociada.',
+            ]);
+        }
+
+        $categoria = $ronda->categoria;
+
+        $asignacion = AsignacionJuezCategoria::query()
+            ->where('categoria_id', $categoria->id)
+            ->where('juez_user_id', $juez->id)
+            ->first();
+
+        if (! $asignacion) {
+            throw ValidationException::withMessages([
+                'ronda_id' => 'No tienes asignacion activa para esta categoria.',
+            ]);
+        }
+
+        $inscripcion = Inscripcion::query()
+            ->with('equipo')
+            ->where('id', $inscripcionId)
+            ->where('categoria_id', $categoria->id)
+            ->aprobadas()
+            ->first();
+
+        if (! $inscripcion) {
+            throw ValidationException::withMessages([
+                'inscripcion_id' => 'El participante no esta habilitado para esta categoria.',
+            ]);
+        }
+
+        $sorteoExistente = Sorteo::query()
+            ->where('ronda_id', $ronda->id)
+            ->where('estado', '!=', 'anulado')
+            ->exists();
+
+        if ($sorteoExistente) {
+            throw ValidationException::withMessages([
+                'ronda_id' => 'No se puede excluir participantes con un sorteo ya generado. Anula o regenera el sorteo antes de continuar.',
+            ]);
+        }
+
+        RondaParticipante::query()->updateOrCreate(
+            [
+                'ronda_id' => $ronda->id,
+                'inscripcion_id' => $inscripcion->id,
+            ],
+            [
+                'equipo_id' => (int) $inscripcion->equipo_id,
+                'estado' => 'excluido',
+                'origen_clasificacion_id' => null,
+            ]
+        );
+
+        return [
+            'message' => 'Participante excluido correctamente del sorteo.',
+            'contexto' => $this->getContextoJuez(
+                $juez,
+                (int) $categoria->id,
+                (int) $ronda->id,
+                $sessionId
+            ),
+        ];
     }
 
     public function construirFormulario(User $juez, int $rondaId, int $equipoId, int $intentoNumero = 1, ?string $sessionId = null): array
@@ -1199,6 +1277,18 @@ class EvaluacionJuezService
             return;
         }
 
+        // Preserve the admin-configured base round. Automatic labels such as
+        // "Semifinal" or "Final" should only be applied to rounds created by
+        // the system from a previous round.
+        if (! $ronda->ronda_origen_id) {
+            $ronda->update([
+                'criterio_clasificacion' => 'ganador_enfrentamiento',
+                'es_final' => (bool) ($ronda->es_final ?? false),
+            ]);
+
+            return;
+        }
+
         $tipo = match (true) {
             $participantes <= 2 => 'final',
             $participantes === 4 => 'semifinal',
@@ -1449,11 +1539,10 @@ class EvaluacionJuezService
             ->exists();
 
         if ($rondaTieneParticipantes) {
-            $participanteValido = RondaParticipante::query()
-                ->where('ronda_id', $ronda->id)
-                ->where('inscripcion_id', $inscripcion->id)
-                ->whereIn('estado', ['pendiente', 'clasificado', 'agregado_manual'])
-                ->exists();
+            $participanteValido = $this->participanteHabilitadoParaRonda(
+                (int) $ronda->id,
+                (int) $inscripcion->id
+            );
 
             if (! $participanteValido) {
                 throw ValidationException::withMessages([
@@ -1505,14 +1594,22 @@ class EvaluacionJuezService
         $cantidadIntentos = max(1, (int) ($ronda?->cantidad_intentos ?? 1));
         $intentosConsecutivos = (bool) ($ronda?->intentos_consecutivos ?? false);
 
-        $participantes = RondaParticipante::query()
-            ->where('ronda_id', $rondaId)
-            ->whereIn('estado', ['pendiente', 'clasificado', 'agregado_manual'])
+        $participantes = $this->getParticipantesSorteo($categoriaId, $rondaId);
+        $participantesCollection = collect($participantes);
+        $participantesActivos = $participantesCollection
+            ->filter(fn (array $participante) => ($participante['estado_participacion'] ?? 'pendiente') !== 'excluido')
             ->pluck('inscripcion_id')
             ->map(fn ($id) => (int) $id)
             ->all();
+        $participantesExcluidos = $participantesCollection
+            ->filter(fn (array $participante) => ($participante['estado_participacion'] ?? 'pendiente') === 'excluido')
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-        if ($ronda?->ronda_origen_id && empty($participantes)) {
+        if ($ronda?->ronda_origen_id && empty($participantesActivos)) {
             return [];
         }
 
@@ -1520,7 +1617,10 @@ class EvaluacionJuezService
             ->with('equipo')
             ->where('categoria_id', $categoriaId)
             ->aprobadas()
-            ->when(! empty($participantes), fn ($query) => $query->whereIn('id', $participantes))
+            ->when(! empty($participantesActivos), fn ($query) => $query->whereIn('id', $participantesActivos))
+            ->when(empty($participantesActivos) && ! empty($participantesExcluidos), function ($query) use ($participantesExcluidos) {
+                $query->whereNotIn('id', $participantesExcluidos);
+            })
             ->orderBy('id')
             ->get()
             ->map(function (Inscripcion $inscripcion) {
@@ -2096,17 +2196,129 @@ class EvaluacionJuezService
         return $nombre !== '' ? $nombre : ($resultado->juez?->email ?: null);
     }
 
+    private function participanteHabilitadoParaRonda(int $rondaId, int $inscripcionId): bool
+    {
+        $estadosPermitidos = ['pendiente', 'clasificado', 'agregado_manual'];
+
+        $estadoActual = RondaParticipante::query()
+            ->where('ronda_id', $rondaId)
+            ->where('inscripcion_id', $inscripcionId)
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
+            ->value('estado');
+
+        return in_array((string) $estadoActual, $estadosPermitidos, true);
+    }
+
+    private function sincronizarParticipantesSorteo(Ronda $ronda, array $detalles): void
+    {
+        $inscripcionesEvaluables = collect($detalles)
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($inscripcionesEvaluables->isEmpty()) {
+            return;
+        }
+
+        $existentes = RondaParticipante::query()
+            ->where('ronda_id', $ronda->id)
+            ->whereIn('inscripcion_id', $inscripcionesEvaluables)
+            ->get()
+            ->groupBy('inscripcion_id');
+
+        foreach ($inscripcionesEvaluables as $inscripcionId) {
+            $existente = $existentes->get($inscripcionId)?->sortByDesc('updated_at')->first();
+
+            if ($existente?->estado === 'excluido') {
+                continue;
+            }
+
+            if ($existente) {
+                if ($existente->estado !== 'clasificado' && $existente->estado !== 'agregado_manual') {
+                    $existente->update([
+                        'equipo_id' => (int) ($existente->equipo_id ?? 0),
+                        'estado' => 'pendiente',
+                    ]);
+                }
+
+                continue;
+            }
+
+            $inscripcion = Inscripcion::query()
+                ->where('id', $inscripcionId)
+                ->value('equipo_id');
+
+            if (! $inscripcion) {
+                continue;
+            }
+
+            RondaParticipante::create([
+                'ronda_id' => $ronda->id,
+                'inscripcion_id' => $inscripcionId,
+                'equipo_id' => (int) $inscripcion,
+                'estado' => 'pendiente',
+                'origen_clasificacion_id' => null,
+            ]);
+        }
+    }
+
     private function inscripcionesSorteables(int $categoriaId, int $rondaId)
     {
-        $ronda = Ronda::query()->find($rondaId);
-        $participantes = RondaParticipante::query()
+        $participantesExcluidos = RondaParticipante::query()
             ->where('ronda_id', $rondaId)
-            ->whereIn('estado', ['pendiente', 'clasificado', 'agregado_manual'])
+            ->where('estado', 'excluido')
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $sorteoVigente = Sorteo::query()
+            ->with('detalles')
+            ->where('ronda_id', $rondaId)
+            ->where('estado', '!=', 'anulado')
+            ->latest('id')
+            ->first();
+
+        if ($sorteoVigente && ! $this->rondaTieneResultadosRegistrados($rondaId)) {
+            $inscripcionesDelSorteo = $sorteoVigente->detalles
+                ->pluck('inscripcion_id')
+                ->map(fn ($id) => (int) $id)
+                ->reject(fn ($id) => in_array((int) $id, $participantesExcluidos, true))
+                ->unique()
+                ->values()
+                ->all();
+
+            if (! empty($inscripcionesDelSorteo)) {
+                return Inscripcion::query()
+                    ->with('equipo')
+                    ->where('categoria_id', $categoriaId)
+                    ->aprobadas()
+                    ->whereIn('id', $inscripcionesDelSorteo)
+                    ->orderBy('id')
+                    ->get();
+            }
+        }
+
+        $ronda = Ronda::query()->find($rondaId);
+        $participantes = $this->getParticipantesSorteo($categoriaId, $rondaId);
+        $participantesCollection = collect($participantes);
+        $participantesActivos = $participantesCollection
+            ->filter(fn (array $participante) => ($participante['estado_participacion'] ?? 'pendiente') !== 'excluido')
             ->pluck('inscripcion_id')
             ->map(fn ($id) => (int) $id)
             ->all();
+        $participantesExcluidos = $participantesCollection
+            ->filter(fn (array $participante) => ($participante['estado_participacion'] ?? 'pendiente') === 'excluido')
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
 
-        if ($ronda?->ronda_origen_id && empty($participantes)) {
+        if ($ronda?->ronda_origen_id && empty($participantesActivos)) {
             return collect();
         }
 
@@ -2114,9 +2326,74 @@ class EvaluacionJuezService
             ->with('equipo')
             ->where('categoria_id', $categoriaId)
             ->aprobadas()
-            ->when(! empty($participantes), fn ($query) => $query->whereIn('id', $participantes))
+            ->when(! empty($participantesActivos), fn ($query) => $query->whereIn('id', $participantesActivos))
+            ->when(empty($participantesActivos) && ! empty($participantesExcluidos), function ($query) use ($participantesExcluidos) {
+                $query->whereNotIn('id', $participantesExcluidos);
+            })
             ->orderBy('id')
             ->get();
+    }
+
+    private function getParticipantesSorteo(int $categoriaId, int $rondaId): array
+    {
+        $ronda = Ronda::query()->find($rondaId);
+        $allowedStates = ['pendiente', 'clasificado', 'agregado_manual'];
+
+        $allowedIds = RondaParticipante::query()
+            ->where('ronda_id', $rondaId)
+            ->whereIn('estado', $allowedStates)
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $excludedIds = RondaParticipante::query()
+            ->where('ronda_id', $rondaId)
+            ->where('estado', 'excluido')
+            ->pluck('inscripcion_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+
+        $baseIds = ! empty($allowedIds)
+            ? array_values(array_unique(array_merge($allowedIds, $excludedIds)))
+            : null;
+
+        if ($ronda?->ronda_origen_id && empty($allowedIds) && empty($excludedIds)) {
+            return [];
+        }
+
+        $inscripciones = Inscripcion::query()
+            ->with('equipo')
+            ->where('categoria_id', $categoriaId)
+            ->aprobadas()
+            ->when($baseIds !== null, fn ($query) => $query->whereIn('id', $baseIds))
+            ->orderBy('id')
+            ->get();
+
+        $estadosPorInscripcion = RondaParticipante::query()
+            ->where('ronda_id', $rondaId)
+            ->whereIn('estado', [...$allowedStates, 'excluido'])
+            ->get()
+            ->groupBy('inscripcion_id')
+            ->map(fn ($items) => (string) ($items->sortByDesc('updated_at')->first()?->estado ?? 'pendiente'))
+            ->all();
+
+        return $inscripciones
+            ->map(function (Inscripcion $inscripcion) use ($estadosPorInscripcion) {
+                return [
+                    'inscripcion_id' => (int) $inscripcion->id,
+                    'equipo_id' => (int) $inscripcion->equipo_id,
+                    'equipo_nombre' => (string) ($inscripcion->equipo?->nombre ?? ''),
+                    'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
+                    'nombre_prototipo' => $inscripcion->nombre_prototipo,
+                    'estado_participacion' => (string) ($estadosPorInscripcion[$inscripcion->id] ?? 'pendiente'),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     private function crearDetallesIndividual($inscripciones): array

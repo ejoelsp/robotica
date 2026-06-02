@@ -49,7 +49,10 @@ class AsignacionJuezController extends Controller
 
         $categorias = Categoria::query()
             ->with(['configCalificacion.mecanismo'])
-            ->withCount(['inscripciones', 'rondas'])
+            ->withCount([
+                'inscripciones as inscripciones_count' => fn ($query) => $query->aprobadas(),
+                'rondas',
+            ])
             ->where('competencia_id', $competenciaId)
             ->where('estado', true)
             ->orderBy('nombre')

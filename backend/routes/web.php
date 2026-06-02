@@ -423,6 +423,9 @@ Route::middleware('auth')->group(function () {
             Route::get('/reportes/{acta}/descargar-firmado', [AdminReporteActaController::class, 'downloadFirmado'])
                 ->name('reportes.download.firmado');
 
+            Route::delete('/reportes/{acta}', [AdminReporteActaController::class, 'destroy'])
+                ->name('reportes.destroy');
+
             Route::get('/certificados', [AdminCertificadoController::class, 'index'])
                 ->name('certificados.index');
 
@@ -508,6 +511,9 @@ Route::middleware('auth')->group(function () {
 
         Route::post('/juez/evaluaciones/sorteo', [JuezEvaluacionController::class, 'sorteo'])
             ->name('juez.evaluaciones.sorteo');
+
+        Route::post('/juez/evaluaciones/sorteo/excluir', [JuezEvaluacionController::class, 'excluirParticipanteSorteo'])
+            ->name('juez.evaluaciones.sorteo.excluir');
 
         Route::post('/juez/evaluaciones', [JuezEvaluacionController::class, 'guardar'])
             ->name('juez.evaluaciones.guardar');

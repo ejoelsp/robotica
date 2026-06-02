@@ -100,6 +100,23 @@ class EvaluacionController extends Controller
         );
     }
 
+    public function excluirParticipanteSorteo(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'ronda_id' => ['required', 'integer', 'min:1'],
+            'inscripcion_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        return response()->json(
+            $this->service->excluirParticipanteDelSorteo(
+                $request->user(),
+                (int) $validated['ronda_id'],
+                (int) $validated['inscripcion_id'],
+                $request->session()->getId()
+            )
+        );
+    }
+
     public function guardar(GuardarEvaluacionRequest $request): JsonResponse
     {
         try {

@@ -22,7 +22,7 @@ defineProps({
     <section>
       <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis Certificados</h1>
       <p class="mt-1 text-sm text-slate-500">
-        Descarga los certificados generados según los resultados publicados.
+        Descarga los certificados generados según tus resultados o tu estado de participación.
       </p>
     </section>
 

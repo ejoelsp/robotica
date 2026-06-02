@@ -225,15 +225,15 @@ class InscripcionController extends Controller
             );
 
             $existeInscripcion = Inscripcion::query()
-                ->where('competencia_id', $inscripcion->competencia_id)
                 ->where('categoria_id', $inscripcion->categoria_id)
                 ->where('equipo_id', $equipo->id)
+                ->where('nombre_prototipo', $data['nombre_prototipo'])
                 ->where('id', '!=', $inscripcion->id)
                 ->exists();
 
             if ($existeInscripcion) {
                 throw ValidationException::withMessages([
-                    'nombre_equipo' => 'Ese equipo ya está inscrito en esta categoría para la competencia seleccionada.',
+                    'nombre_prototipo' => 'Ya existe una inscripción para este mismo equipo con este mismo prototipo en la categoría seleccionada.',
                 ]);
             }
 

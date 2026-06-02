@@ -185,7 +185,7 @@ watch(
             @click="isMobileMenuOpen = false"
           >
             <ArrowRightOnRectangleIcon class="h-5 w-5" />
-            Cerrar SesiÃ³n
+            Cerrar Sesión
           </Link>
         </div>
       </div>

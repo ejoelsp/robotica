@@ -61,9 +61,23 @@ function formatDate(value) {
   });
 }
 
+function formatDateOnly(value) {
+  if (!value) return "Sin fecha";
+
+  return new Date(value).toLocaleDateString("es-EC", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+}
+
 function statusLabel(item) {
   if (item.estado_resultado === "publicado") {
     return item.estado_publicacion === "cerrado" ? "Resultado cerrado" : "Resultado publicado";
+  }
+
+  if (item.estado_resultado === "no_clasificado") {
+    return "No clasificado";
   }
 
   if (item.estado_resultado === "pendiente_publicacion") {
@@ -78,6 +92,10 @@ function statusClasses(item) {
     return item.estado_publicacion === "cerrado"
       ? "bg-slate-900 text-white"
       : "bg-emerald-100 text-emerald-700";
+  }
+
+  if (item.estado_resultado === "no_clasificado") {
+    return "bg-slate-100 text-slate-700";
   }
 
   if (item.estado_resultado === "pendiente_publicacion") {
@@ -98,7 +116,7 @@ function statusClasses(item) {
         </p>
       </section>
 
-      <section class="grid gap-4 md:grid-cols-3">
+      <section class="grid gap-4 md:grid-cols-4">
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div class="flex items-center justify-between gap-4">
             <div>
@@ -137,6 +155,20 @@ function statusClasses(item) {
             </div>
             <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-white">
               <ClockIcon class="h-6 w-6 text-amber-600" />
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm sm:p-5">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <p class="text-sm font-medium text-slate-500">No clasificados</p>
+              <p class="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+                {{ summary.no_clasificados ?? 0 }}
+              </p>
+            </div>
+            <div class="flex h-12 w-12 items-center justify-center rounded-xl bg-white">
+              <TrophyIcon class="h-6 w-6 text-slate-500" />
             </div>
           </div>
         </div>
@@ -209,12 +241,13 @@ function statusClasses(item) {
             :key="item.inscripcion_id"
             class="px-4 py-4 sm:px-5 sm:py-5"
           >
-            <div class="grid gap-4 sm:gap-5 lg:grid-cols-[2fr_1.4fr_1.1fr_1fr_44px] lg:items-center">
-              <div class="min-w-0">
-                <h3 class="text-lg font-bold text-slate-900 sm:text-xl">
-                  {{ item.categoria_nombre }}
-                </h3>
-                <p class="mt-2 text-sm text-slate-600">
+            <h3 class="text-lg font-bold text-slate-900 sm:text-xl">
+              {{ item.categoria_nombre }}
+            </h3>
+
+            <div class="mt-4 grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1.1fr)_minmax(0,1fr)_auto_44px] xl:items-center">
+              <div class="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p class="text-sm text-slate-600">
                   <span class="font-semibold">Equipo:</span> {{ item.equipo_nombre }}
                 </p>
                 <p class="mt-1 text-sm text-slate-500">
@@ -222,36 +255,30 @@ function statusClasses(item) {
                 </p>
               </div>
 
-              <div class="min-w-0">
+              <div class="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p class="text-sm text-slate-500">Prototipo</p>
                 <p class="mt-1 truncate text-base font-semibold text-slate-900">
                   {{ item.nombre_prototipo || "Sin prototipo" }}
                 </p>
               </div>
 
-              <div>
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p class="text-sm text-slate-500">Resultado</p>
                 <p class="mt-1 text-base font-bold text-slate-900">
                   {{ item.resultado_label || "Aún no publicado" }}
                 </p>
-                <p v-if="item.posicion" class="mt-1 text-sm text-slate-500">
-                  Posición {{ item.posicion }} / {{ item.ronda_nombre }}
-                </p>
               </div>
 
-              <div>
+              <div class="flex items-center xl:justify-center">
                 <span
                   class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold"
                   :class="statusClasses(item)"
                 >
                   {{ statusLabel(item) }}
                 </span>
-                <p class="mt-2 text-xs text-slate-500">
-                  {{ formatDate(item.publicado_at || item.updated_at) }}
-                </p>
               </div>
 
-              <div class="flex lg:justify-end">
+              <div class="flex xl:justify-end">
                 <button
                   v-if="item.resultados?.length"
                   type="button"
@@ -293,10 +320,10 @@ function statusClasses(item) {
                       {{ resultado.resultado_label }}
                     </td>
                     <td class="px-4 py-3 text-slate-700">
-                      {{ resultado.estado_publicacion }}
+                      {{ resultado.estado_resultado || resultado.estado_publicacion }}
                     </td>
                     <td class="px-4 py-3 text-slate-500">
-                      {{ formatDate(resultado.publicado_at || resultado.updated_at) }}
+                      {{ formatDateOnly(resultado.publicado_at || resultado.updated_at) }}
                     </td>
                   </tr>
                 </tbody>

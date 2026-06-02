@@ -7,6 +7,7 @@ use App\Models\Clasificacion;
 use App\Models\Inscripcion;
 use App\Models\InscripcionIntegrante;
 use App\Models\PlantillaCertificado;
+use App\Models\RondaParticipante;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -55,17 +56,16 @@ class CertificadoService
             ->orderByDesc('id')
             ->get();
 
+        $items = $inscripciones
+            ->flatMap(fn (Inscripcion $inscripcion) => $this->serializarCertificadosInscripcion($inscripcion))
+            ->values();
+
         return [
             'summary' => [
-                'total' => $inscripciones->sum(fn (Inscripcion $inscripcion) => $inscripcion->integrantes->count()),
-                'disponibles' => $inscripciones
-                    ->filter(fn (Inscripcion $inscripcion) => $this->clasificacionPublicada($inscripcion) !== null)
-                    ->sum(fn (Inscripcion $inscripcion) => $inscripcion->integrantes->count()),
+                'total' => $items->count(),
+                'disponibles' => $items->where('disponible', true)->count(),
             ],
-            'items' => $inscripciones
-                ->flatMap(fn (Inscripcion $inscripcion) => $this->serializarCertificadosInscripcion($inscripcion))
-                ->values()
-                ->all(),
+            'items' => $items->all(),
         ];
     }
 
@@ -89,14 +89,17 @@ class CertificadoService
         );
 
         $clasificacion = $this->clasificacionPublicada($inscripcion);
+        $excluido = $this->inscripcionExcluida($inscripcion);
 
-        if (! $clasificacion) {
+        if (! $clasificacion && ! $excluido) {
             throw ValidationException::withMessages([
                 'certificado' => 'El certificado estará disponible cuando los resultados se publiquen.',
             ]);
         }
 
-        $tipo = $this->tipoPorPosicion((int) $clasificacion->posicion);
+        $tipo = $clasificacion
+            ? $this->tipoPorPosicion((int) $clasificacion->posicion)
+            : 'participacion';
         $plantilla = $this->plantillaActiva($inscripcion, $tipo);
 
         if (! $plantilla) {
@@ -161,7 +164,10 @@ class CertificadoService
     private function serializarCertificadosInscripcion(Inscripcion $inscripcion)
     {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
-        $tipo = $clasificacion ? $this->tipoPorPosicion((int) $clasificacion->posicion) : null;
+        $excluido = $this->inscripcionExcluida($inscripcion);
+        $tipo = $clasificacion
+            ? $this->tipoPorPosicion((int) $clasificacion->posicion)
+            : ($excluido ? 'participacion' : null);
         $plantilla = $tipo ? $this->plantillaActiva($inscripcion, $tipo) : null;
 
         return $inscripcion->integrantes
@@ -177,10 +183,12 @@ class CertificadoService
                 'posicion' => $clasificacion ? (int) $clasificacion->posicion : null,
                 'tipo_certificado' => $tipo,
                 'tipo_label' => $tipo ? ($this->tiposCertificados()[$tipo] ?? $tipo) : null,
-                'disponible' => $clasificacion !== null && $plantilla !== null,
+                'disponible' => $tipo !== null && $plantilla !== null,
                 'mensaje' => $clasificacion
                     ? ($plantilla ? null : 'Falta plantilla activa para este certificado.')
-                    : 'Disponible cuando los resultados se publiquen.',
+                    : ($excluido
+                        ? ($plantilla ? null : 'Falta plantilla activa para este certificado.')
+                        : 'Disponible cuando los resultados se publiquen.'),
             ]);
     }
 
@@ -213,6 +221,14 @@ class CertificadoService
             3 => 'tercer_lugar',
             default => 'participacion',
         };
+    }
+
+    private function inscripcionExcluida(Inscripcion $inscripcion): bool
+    {
+        return RondaParticipante::query()
+            ->where('inscripcion_id', $inscripcion->id)
+            ->where('estado', 'excluido')
+            ->exists();
     }
 
     private function plantillaActiva(Inscripcion $inscripcion, string $tipo): ?PlantillaCertificado

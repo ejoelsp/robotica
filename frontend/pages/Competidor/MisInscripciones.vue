@@ -22,6 +22,7 @@ import {
   ClipboardDocumentIcon,
   TrashIcon,
   PencilSquareIcon,
+  ExclamationCircleIcon,
 } from "@heroicons/vue/24/outline";
 
 defineOptions({ layout: CompetidorLayout });
@@ -74,6 +75,8 @@ const isInscripcionExitosaOpen = ref(false);
 const formularioModo = ref("create");
 const editTarget = ref(null);
 const editInitialData = ref(null);
+const inscripcionToast = ref({ show: false, type: "warning", message: "" });
+let inscripcionToastTimer = null;
 
 const inscripcionForm = useForm({
   competencia_id: null,
@@ -118,6 +121,27 @@ const cerrarFormularioInscripcion = () => {
   inscripcionForm.clearErrors();
 };
 
+const clearInscripcionBackendError = (field) => {
+  if (!field) return;
+  inscripcionForm.clearErrors(field);
+};
+
+const showInscripcionToast = (message, type = "warning", duration = 4200) => {
+  inscripcionToast.value = {
+    show: true,
+    type,
+    message,
+  };
+
+  if (inscripcionToastTimer) {
+    clearTimeout(inscripcionToastTimer);
+  }
+
+  inscripcionToastTimer = setTimeout(() => {
+    inscripcionToast.value.show = false;
+  }, duration);
+};
+
 const abrirReglamentoCategoria = (categoria) => {
   const url = categoria?.reglamento_url;
 
@@ -128,6 +152,15 @@ const abrirReglamentoCategoria = (categoria) => {
 
   window.open(url, "_blank");
 };
+
+const normalizeDuplicateValue = (value) =>
+  String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("es-EC");
+
+const duplicateInscripcionMessage =
+  "Ya existe una inscripción para este mismo equipo con este mismo prototipo en la categoría seleccionada.";
 
 const enviarFormularioInscripcion = (payload) => {
   if (!selectedCategoria.value) return;
@@ -154,6 +187,20 @@ const enviarFormularioInscripcion = (payload) => {
     ? `/competidor/inscripciones/${editTarget.value.id}/editar`
     : "/competidor/inscripciones";
 
+  const duplicateInscripcion = inscripcionesActivas.value.find((item) => (
+    Number(item.categoria_id) === Number(selectedCategoria.value.id)
+    && normalizeDuplicateValue(item.equipo) === normalizeDuplicateValue(payload.equipo)
+    && normalizeDuplicateValue(item.institucion) === normalizeDuplicateValue(payload.institucion)
+    && normalizeDuplicateValue(item.prototipo) === normalizeDuplicateValue(payload.prototipo)
+    && (!isEdit || Number(item.id) !== Number(editTarget.value?.id))
+  ));
+
+  if (duplicateInscripcion) {
+    inscripcionForm.setError("nombre_prototipo", duplicateInscripcionMessage);
+    showInscripcionToast(duplicateInscripcionMessage, "warning");
+    return;
+  }
+
   const options = {
     preserveScroll: true,
     onSuccess: () => {
@@ -175,11 +222,23 @@ const enviarFormularioInscripcion = (payload) => {
     onError: (errors) => {
       console.error("Errores de validación:", errors);
 
+      const hasInlineFieldError = Boolean(
+        errors?.nombre_prototipo
+        || errors?.nombre_equipo
+        || errors?.institucion
+        || errors?.nombre_capitan
+        || errors?.telefono_contacto
+      );
+
+      if (errors?.nombre_prototipo) {
+        showInscripcionToast(errors.nombre_prototipo, "warning");
+      }
+
       const firstError = Object.values(errors)?.[0];
-      if (firstError) {
+      if (firstError && !hasInlineFieldError) {
         alert(firstError);
       } else {
-        alert(isEdit ? "No se pudo actualizar la inscripción." : "No se pudo registrar la inscripción.");
+        return;
       }
     },
   };
@@ -1071,9 +1130,39 @@ const confirmarEliminarInscripcion = () => {
         :categoria="selectedCategoria"
         :initial-data="editInitialData"
         :mode="formularioModo"
+        :backend-errors="inscripcionForm.errors"
         @close="cerrarFormularioInscripcion"
+        @clear-backend-error="clearInscripcionBackendError"
         @submitted="enviarFormularioInscripcion"
       />
+
+      <Teleport to="body">
+        <div
+          v-if="inscripcionToast.show"
+          class="fixed right-4 top-4 z-[10100] w-[min(92vw,480px)] overflow-hidden rounded-2xl border bg-white shadow-2xl"
+          :class="inscripcionToast.type === 'warning' ? 'border-amber-200' : 'border-slate-200'"
+        >
+          <div class="flex items-start gap-3 px-4 py-4">
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+              :class="inscripcionToast.type === 'warning' ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-600'"
+            >
+              <ExclamationCircleIcon class="h-6 w-6" />
+            </div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-900">Revisa la información</p>
+              <p class="mt-1 text-sm leading-6 text-slate-600">{{ inscripcionToast.message }}</p>
+            </div>
+            <button
+              type="button"
+              class="ml-auto inline-flex h-8 w-8 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+              @click="inscripcionToast.show = false"
+            >
+              <XMarkIcon class="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+      </Teleport>
 
       <ModalInscripcionExitosa
         :open="isInscripcionExitosaOpen"

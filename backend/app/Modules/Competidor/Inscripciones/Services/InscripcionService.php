@@ -51,17 +51,17 @@ class InscripcionService
 
             /*
             Evitar duplicidad:
-            mismo equipo en misma competencia y categoría
+            mismo equipo y mismo prototipo en la misma categoría
             */
             $existeInscripcion = Inscripcion::query()
-                ->where('competencia_id', $competencia->id)
                 ->where('categoria_id', $categoria->id)
                 ->where('equipo_id', $equipo->id)
+                ->where('nombre_prototipo', $data['nombre_prototipo'])
                 ->exists();
 
             if ($existeInscripcion) {
                 throw ValidationException::withMessages([
-                    'nombre_equipo' => 'Ese equipo ya está inscrito en esta categoría para la competencia seleccionada.',
+                    'nombre_prototipo' => 'Ya existe una inscripción para este mismo equipo con este mismo prototipo en la categoría seleccionada.',
                 ]);
             }
 

@@ -14,6 +14,7 @@ import {
   Squares2X2Icon,
   SparklesIcon,
   TrophyIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/vue/24/outline";
 
 const props = defineProps({
@@ -40,6 +41,7 @@ const remoteLoading = ref(false);
 const remoteSaving = ref(false);
 const remoteEndingMatch = ref(false);
 const remoteDrawGenerating = ref(false);
+const remoteExcludingParticipant = ref(false);
 const remoteNotice = ref({ type: "", message: "" });
 const toast = ref({ show: false, type: "info", message: "" });
 let toastTimer = null;
@@ -62,6 +64,9 @@ const completedAttemptNumber = ref(1);
 const nextAttemptNumber = ref(2);
 const regenerateDrawModalOpen = ref(false);
 let regenerateDrawModalResolver = null;
+const excludeModalOpen = ref(false);
+const excludeModalItem = ref(null);
+const excludeModalProcessing = ref(false);
 const roundCompletionModal = ref({
   show: false,
   isFinal: false,
@@ -199,6 +204,11 @@ const remoteSelectedCompetition = computed(() => {
 const remoteRounds = computed(() => selectedCategory.value?.rondas ?? []);
 
 const remoteTeams = computed(() => remoteContext.value?.equipos ?? []);
+const remoteParticipants = computed(() => remoteContext.value?.participantes_sorteo ?? []);
+const remoteParticipantsMap = computed(() => {
+  const items = remoteParticipants.value ?? [];
+  return new Map(items.map((item) => [String(item.inscripcion_id), item]));
+});
 
 const currentSorteo = computed(() => remoteContext.value?.sorteo ?? null);
 
@@ -213,7 +223,9 @@ const hasCurrentSorteo = computed(() => !isRemoteMode.value || !!currentSorteo.v
 const pendingRemoteTeams = computed(() => {
   if (!isRemoteMode.value) return [];
 
-  return remoteTeams.value.filter((team) => !remoteTeamEvaluationComplete(team) && team.sorteo_estado !== "completado");
+  const isFightDraw = currentSorteo.value?.tipo_sorteo === "enfrentamiento";
+
+  return remoteTeams.value.filter((team) => isRemoteTeamEvaluable(team, isFightDraw));
 });
 
 const currentPendingRemoteTeam = computed(() => pendingRemoteTeams.value[0] ?? null);
@@ -279,6 +291,16 @@ function remoteTeamEvaluationComplete(team) {
   if (team.evaluacion_completa !== undefined) return Boolean(team.evaluacion_completa);
 
   return !!team.resultado_id;
+}
+
+function isRemoteTeamEvaluable(team, isFightDraw = false) {
+  if (!team) return false;
+
+  if (team.sorteo_estado === "completado" || team.sorteo_estado === "directo") {
+    return false;
+  }
+
+  return isFightDraw || !remoteTeamEvaluationComplete(team);
 }
 
 function currentSaveWillCompleteEvaluation() {
@@ -481,7 +503,7 @@ const sorteoOrdenItems = computed(() => {
         intento_numero: 1,
         intento_label: "Intento 1",
         participante: participantName(detalle),
-        institucion: detalle.institucion || "Sin institucion",
+        institucion: detalle.institucion || "Sin institución",
       }));
   }
 
@@ -493,7 +515,8 @@ const sorteoOrdenItems = computed(() => {
       intento_numero: team.intento_numero ?? 1,
       intento_label: team.intento_label ?? `Intento ${team.intento_numero ?? 1}`,
       participante: participantName(team),
-      institucion: team.institucion || "Sin institucion",
+      institucion: team.institucion || "Sin institución",
+      estado_participacion: remoteParticipantsMap.value.get(String(team.inscripcion_id))?.estado_participacion ?? "incluido",
       resultado_id: team.resultado_id ?? null,
       resultado_estado: team.resultado_estado ?? null,
       resultado_juez_nombre: team.resultado_juez_nombre ?? "",
@@ -1269,7 +1292,7 @@ async function releaseRemoteCategoryLock(categoryId = remoteSelectedCategoryId.v
       categoria_id: Number(categoryId),
     });
   } catch (_) {
-    // El timeout del backend libera el bloqueo si la pestaña se cierra o la petición falla.
+    // El timeout del backend libera el bloqueo si la pesta?a se cierra o la petici?n falla.
   }
 }
 
@@ -1307,16 +1330,11 @@ async function loadRemoteContext(options = {}) {
     }
 
     const isFightDraw = data?.sorteo?.tipo_sorteo === "enfrentamiento";
-    const nextPendingTeam = data?.equipos?.find((item) => {
-      if (item.sorteo_estado === "completado") return false;
-
-      return isFightDraw || !remoteTeamEvaluationComplete(item);
-    });
+    const nextPendingTeam = data?.equipos?.find((item) => isRemoteTeamEvaluable(item, isFightDraw));
     const stillPending = data?.equipos?.some(
       (item) => String(item.equipo_id) === previousTeamId
         && Number(item.intento_numero ?? 1) === previousAttempt
-        && item.sorteo_estado !== "completado"
-        && (data?.sorteo?.tipo_sorteo === "enfrentamiento" || !remoteTeamEvaluationComplete(item))
+        && isRemoteTeamEvaluable(item, isFightDraw)
     );
 
     remoteSelectedTeamId.value = stillPending
@@ -1439,14 +1457,6 @@ async function generarSorteoRemoto() {
     return;
   }
 
-  if (
-    regenerar &&
-    remoteDrawGenerating.value &&
-    !window.confirm("Se generará un nuevo sorteo para esta ronda. El sorteo anterior quedará anulado. ¿Deseas continuar?")
-  ) {
-    return;
-  }
-
   remoteDrawGenerating.value = true;
   setNotice(remoteNotice, "", "");
 
@@ -1476,6 +1486,67 @@ async function generarSorteoRemoto() {
     );
   } finally {
     remoteDrawGenerating.value = false;
+  }
+}
+
+async function excluirParticipanteRemoto(item) {
+  if (!isRemoteMode.value || !item?.inscripcion_id) return;
+
+  if (!remoteSelectedRondaId.value) {
+    showToast("Selecciona una ronda antes de excluir participantes.", "warning", 4500);
+    return;
+  }
+
+  if (currentSorteo.value) {
+    showToast("No puedes excluir participantes con un sorteo ya generado.", "warning", 4500);
+    return;
+  }
+
+  excludeModalItem.value = item;
+  excludeModalOpen.value = true;
+}
+
+function closeExcludeModal() {
+  if (excludeModalProcessing.value) return;
+
+  excludeModalOpen.value = false;
+  excludeModalItem.value = null;
+}
+
+async function confirmExcludeParticipant() {
+  const item = excludeModalItem.value;
+  if (!item?.inscripcion_id || !remoteSelectedRondaId.value) return;
+
+  excludeModalProcessing.value = true;
+  setNotice(remoteNotice, "", "");
+
+  try {
+    const { data } = await axios.post("/juez/evaluaciones/sorteo/excluir", {
+      ronda_id: Number(remoteSelectedRondaId.value),
+      inscripcion_id: Number(item.inscripcion_id),
+    });
+
+    remoteContext.value = data?.contexto ?? remoteContext.value;
+    await loadRemoteContext({
+      categoriaId: remoteSelectedCategoryId.value,
+      rondaId: remoteSelectedRondaId.value,
+      preserveTeam: true,
+      silent: true,
+    });
+
+    excludeModalOpen.value = false;
+    excludeModalItem.value = null;
+    setNotice(remoteNotice, "success", data?.message || "Participante excluido correctamente.");
+  } catch (error) {
+    setNotice(
+      remoteNotice,
+      "error",
+      error?.response?.data?.message ||
+        Object.values(error?.response?.data?.errors ?? {})?.[0]?.[0] ||
+      "No se pudo excluir al participante."
+    );
+  } finally {
+    excludeModalProcessing.value = false;
   }
 }
 
@@ -1644,7 +1715,7 @@ async function registrarResultadoRemoto() {
       setNotice(
         remoteNotice,
         "success",
-        `Evaluacion guardada correctamente. Faltan ${Number(currentRemoteTeam.value.evaluaciones_pendientes ?? 0)} calificaciones de otros jueces para avanzar.`
+        `Evaluación guardada correctamente. Faltan ${Number(currentRemoteTeam.value.evaluaciones_pendientes ?? 0)} calificaciones de otros jueces para avanzar.`
       );
       return;
     }
@@ -1653,8 +1724,8 @@ async function registrarResultadoRemoto() {
       remoteNotice,
       "success",
       remoteSelectedTeamId.value
-        ? "Evaluacion guardada correctamente. Se cargó el siguiente participante."
-        : "Evaluacion guardada correctamente. Ya no hay participantes pendientes."
+        ? "Evaluación guardada correctamente. Se cargó el siguiente participante."
+        : "Evaluación guardada correctamente. Ya no hay participantes pendientes."
     );
   } catch (error) {
     if (error?.response?.status === 409) {
@@ -2201,6 +2272,80 @@ onBeforeUnmount(() => {
       </div>
 
       <div
+        v-if="excludeModalOpen"
+        class="fixed inset-0 z-[10085] flex items-center justify-center bg-slate-950/55 p-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="exclude-participant-title"
+        @click.self="closeExcludeModal"
+      >
+        <div class="relative w-full max-w-md overflow-hidden rounded-3xl bg-white shadow-2xl ring-1 ring-slate-200">
+          <div class="flex items-start gap-4 border-b border-slate-100 bg-gradient-to-br from-rose-50 via-white to-white px-5 py-5">
+            <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-700">
+              <ExclamationTriangleIcon class="h-7 w-7" />
+            </div>
+
+            <div class="flex-1">
+              <p id="exclude-participant-title" class="text-lg font-bold text-slate-900">
+                Excluir participante
+              </p>
+              <p class="mt-1 text-sm leading-6 text-slate-600">
+                Esta acción lo retirará del sorteo de la ronda antes de generar el orden final.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              class="rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              :disabled="excludeModalProcessing"
+              @click="closeExcludeModal"
+              aria-label="Cerrar"
+            >
+              <XMarkIcon class="h-5 w-5" />
+            </button>
+          </div>
+
+          <div class="px-5 py-5">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Participante seleccionado
+              </p>
+              <p class="mt-2 text-base font-bold text-slate-900">
+                {{ participantName(excludeModalItem, "Sin nombre") }}
+              </p>
+              <p class="mt-1 text-sm text-slate-600">
+                {{ excludeModalItem?.institucion || "Sin institución" }}
+              </p>
+            </div>
+
+            <p class="mt-4 text-sm leading-6 text-slate-600">
+              ¿Quieres continuar? Si confirmas, este participante quedará excluido y no aparecerá en el sorteo de la ronda.
+            </p>
+          </div>
+
+          <div class="flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50 px-5 py-4 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="excludeModalProcessing"
+              @click="closeExcludeModal"
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              class="inline-flex items-center justify-center rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-70"
+              :disabled="excludeModalProcessing"
+              @click="confirmExcludeParticipant"
+            >
+              {{ excludeModalProcessing ? "Excluyendo..." : "Sí, excluir" }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div
         v-if="roundCompletionModal.show"
         class="fixed inset-0 z-[10090] flex items-center justify-center bg-slate-950/50 p-4"
         role="dialog"
@@ -2439,7 +2584,7 @@ onBeforeUnmount(() => {
                       {{
                         isEnfrentamientoSorteo
                           ? `Combate #${currentRemoteTeam.sorteo_grupo || currentRemoteTeam.sorteo_orden || "actual"}`
-                          : `Participante ${currentRemoteTeam.sorteo_orden ? `#${currentRemoteTeam.sorteo_orden}` : "actual"} · ${currentRemoteTeam.intento_label || `Intento ${currentRemoteTeam.intento_numero || 1}`}`
+                          : `Participante ${currentRemoteTeam.sorteo_orden ? `#${currentRemoteTeam.sorteo_orden}` : "actual"} - ${currentRemoteTeam.intento_label || `Intento ${currentRemoteTeam.intento_numero || 1}`}`
                       }}
                     </p>
                     <template v-if="isEnfrentamientoSorteo">
@@ -2449,13 +2594,13 @@ onBeforeUnmount(() => {
                         {{ participantName(scoreboardTeamB, "Pasa directo") }}
                       </p>
                       <p class="mt-1 text-sm text-slate-600">
-                        {{ scoreboardTeamA?.institucion || "Sin institucion" }}
-                        <span v-if="scoreboardTeamB"> / {{ scoreboardTeamB?.institucion || "Sin institucion" }}</span>
+                        {{ scoreboardTeamA?.institucion || "Sin institución" }}
+                        <span v-if="scoreboardTeamB"> / {{ scoreboardTeamB?.institucion || "Sin institución" }}</span>
                       </p>
                     </template>
                     <template v-else>
                       <p class="mt-1 text-xl font-bold text-slate-950">{{ participantName(currentRemoteTeam) }}</p>
-                      <p class="mt-1 text-sm text-slate-600">{{ currentRemoteTeam.institucion || "Sin institucion" }}</p>
+                      <p class="mt-1 text-sm text-slate-600">{{ currentRemoteTeam.institucion || "Sin institución" }}</p>
                     </template>
                   </div>
                   <span class="inline-flex rounded-full bg-white px-3 py-1.5 text-sm font-semibold text-blue-700 ring-1 ring-blue-200">
@@ -2635,7 +2780,7 @@ onBeforeUnmount(() => {
                         <td class="px-3 py-3 text-center">
                           <p class="font-semibold text-white">{{ field.label }}</p>
                           <p class="text-xs text-slate-400">
-                            {{ isTablaPuntajeMaximoTemplate ? "Maximo permitido" : "Suma al subtotal" }}
+                            {{ isTablaPuntajeMaximoTemplate ? "Máximo permitido" : "Suma al subtotal" }}
                           </p>
                         </td>
                       <td class="px-3 py-3 text-center text-slate-200">
@@ -2865,7 +3010,7 @@ onBeforeUnmount(() => {
                       {{ participantName(scoreboardTeamA, "Equipo A") }}
                     </p>
                     <p class="mt-1 truncate text-xs text-slate-400">
-                      {{ scoreboardTeamA?.institucion || "Sin institucion" }}
+                      {{ scoreboardTeamA?.institucion || "Sin institución" }}
                     </p>
                   </div>
 
@@ -2900,7 +3045,7 @@ onBeforeUnmount(() => {
                       {{ participantName(scoreboardTeamB, "Equipo B") }}
                     </p>
                     <p class="mt-1 truncate text-xs text-slate-400">
-                      {{ scoreboardTeamB?.institucion || "Sin institucion" }}
+                      {{ scoreboardTeamB?.institucion || "Sin institución" }}
                     </p>
                   </div>
                 </div>
@@ -3203,6 +3348,58 @@ onBeforeUnmount(() => {
                 </span>
               </div>
 
+              <div v-if="isRemoteMode && !currentSorteo && remoteParticipants.length" class="overflow-hidden rounded-xl border border-slate-200">
+                <div class="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Participantes de la ronda
+                </div>
+                <div class="max-h-[22rem] overflow-y-auto">
+                  <table class="min-w-full text-sm">
+                    <thead class="sticky top-0 z-10 bg-white text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="px-3 py-2.5 font-semibold">Participante</th>
+                        <th class="px-3 py-2.5 font-semibold">Institución</th>
+                        <th class="px-3 py-2.5 font-semibold">Estado</th>
+                        <th class="w-28 px-3 py-2.5 font-semibold text-right">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 bg-white">
+                      <tr
+                        v-for="item in remoteParticipants"
+                        :key="`participante-${item.inscripcion_id}`"
+                        :class="item.estado_participacion === 'excluido' ? 'bg-slate-50 opacity-70' : ''"
+                      >
+                        <td class="px-3 py-3">
+                          <p class="font-semibold text-slate-900">{{ participantName(item, "-") }}</p>
+                          <p class="mt-0.5 text-xs text-slate-500">Orden base {{ item.sorteo_orden || "-" }}</p>
+                        </td>
+                        <td class="px-3 py-3 text-slate-600">{{ item.institucion || "Sin institución" }}</td>
+                        <td class="px-3 py-3 text-xs">
+                          <span
+                            class="inline-flex rounded-full px-2.5 py-1 font-semibold ring-1"
+                            :class="item.estado_participacion === 'excluido'
+                              ? 'bg-slate-100 text-slate-600 ring-slate-200'
+                              : 'bg-emerald-50 text-emerald-700 ring-emerald-200'"
+                          >
+                            {{ item.estado_participacion === 'excluido' ? 'Excluido' : 'Incluido' }}
+                          </span>
+                        </td>
+                        <td class="px-3 py-3 text-right">
+                          <button
+                            v-if="item.estado_participacion !== 'excluido'"
+                            type="button"
+                            @click.stop="excluirParticipanteRemoto(item)"
+                            :disabled="remoteExcludingParticipant"
+                            class="inline-flex items-center justify-center rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {{ remoteExcludingParticipant ? 'Excluyendo...' : 'Excluir' }}
+                          </button>
+                          <span v-else class="text-xs font-semibold text-slate-400">Excluido</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
               <button
                 v-if="isRemoteMode"
                 type="button"
@@ -3215,6 +3412,7 @@ onBeforeUnmount(() => {
                 {{ remoteDrawButtonLabel }}
               </button>
             </div>
+
 
             <div
               v-if="currentSorteo?.tipo_sorteo === 'enfrentamiento' && (sorteoGroups.length || sorteoDirectItems.length)"
@@ -3256,7 +3454,7 @@ onBeforeUnmount(() => {
                             {{ participantName((group.items.find((item) => item.lado === 'A') ?? group.items[0]), "-") }}
                           </p>
                           <p class="mt-0.5 text-xs text-slate-500">
-                            {{ (group.items.find((item) => item.lado === 'A') ?? group.items[0])?.institucion || "Sin institucion" }}
+                            {{ (group.items.find((item) => item.lado === 'A') ?? group.items[0])?.institucion || "Sin institución" }}
                           </p>
                         </td>
                         <td class="px-2 py-3 text-center">
@@ -3272,7 +3470,7 @@ onBeforeUnmount(() => {
                             {{ participantName(group.items.find((item) => item.lado === 'B'), "-") }}
                           </p>
                           <p class="mt-0.5 text-xs text-slate-500">
-                            {{ group.items.find((item) => item.lado === 'B')?.institucion || "Sin institucion" }}
+                            {{ group.items.find((item) => item.lado === 'B')?.institucion || "Sin institución" }}
                           </p>
                         </td>
                       </tr>
@@ -3298,7 +3496,7 @@ onBeforeUnmount(() => {
                       <tr v-for="item in sorteoDirectItems" :key="`directo-${item.inscripcion_id}`">
                         <td class="px-3 py-3 font-semibold text-emerald-700">{{ item.orden }}</td>
                         <td class="px-3 py-3 font-semibold text-slate-900">{{ participantName(item, "-") }}</td>
-                        <td class="px-3 py-3 text-slate-600">{{ item.institucion || "Sin institucion" }}</td>
+                        <td class="px-3 py-3 text-slate-600">{{ item.institucion || "Sin institución" }}</td>
                       </tr>
                     </tbody>
                   </table>
@@ -3306,7 +3504,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-else-if="sorteoOrdenItems.length" class="overflow-hidden rounded-xl border border-slate-200">
+            <div v-else-if="currentSorteo && sorteoOrdenItems.length" class="overflow-hidden rounded-xl border border-slate-200">
               <div class="max-h-[42rem] overflow-y-auto">
                 <table class="min-w-full text-sm">
                   <thead class="sticky top-0 z-10 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
@@ -3316,6 +3514,7 @@ onBeforeUnmount(() => {
                       <th class="px-3 py-2.5 font-semibold">Participante</th>
                       <th class="px-3 py-2.5 font-semibold">Institución</th>
                       <th class="px-3 py-2.5 font-semibold">Estado</th>
+
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-slate-100 bg-white">
@@ -3425,3 +3624,4 @@ onBeforeUnmount(() => {
   color: #f2f2f2;
 }
 </style>
+

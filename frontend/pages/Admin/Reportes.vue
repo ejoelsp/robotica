@@ -12,6 +12,7 @@ import {
   DocumentTextIcon,
   ExclamationTriangleIcon,
   PrinterIcon,
+  TrashIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
 
@@ -39,6 +40,12 @@ const uploadState = ref({
   file: null,
   saving: false,
 });
+const deleteState = ref({
+  reporteId: null,
+  saving: false,
+});
+const deleteModalOpen = ref(false);
+const deleteModalReport = ref(null);
 
 const selectedCategory = computed(() => {
   return categorias.value.find((item) => Number(item.id) === Number(selectedCategoryId.value)) ?? null;
@@ -185,6 +192,48 @@ async function subirFirmado(reporte) {
   }
 }
 
+function openDeleteModal(reporte) {
+  deleteModalReport.value = reporte;
+  deleteModalOpen.value = true;
+}
+
+function closeDeleteModal() {
+  if (deleteState.value.saving) return;
+
+  deleteModalOpen.value = false;
+  deleteModalReport.value = null;
+}
+
+async function confirmDeleteReport() {
+  const reporte = deleteModalReport.value;
+  if (!reporte?.id) return;
+
+  deleteState.value = {
+    reporteId: reporte.id,
+    saving: true,
+  };
+  setNotice("", "");
+
+  try {
+    await axios.delete(`/admin/reportes/${reporte.id}`);
+    deleteModalOpen.value = false;
+    deleteModalReport.value = null;
+    uploadState.value = { reporteId: null, file: null, saving: false };
+    await refreshReportes();
+    setNotice("success", "Reporte eliminado correctamente.");
+  } catch (error) {
+    setNotice(
+      "error",
+      error?.response?.data?.message || "No se pudo eliminar el reporte."
+    );
+  } finally {
+    deleteState.value = {
+      reporteId: null,
+      saving: false,
+    };
+  }
+}
+
 function estadoClase(estado) {
   if (estado === "firmado") return "bg-emerald-50 text-emerald-700 ring-emerald-200";
   if (estado === "anulado") return "bg-red-50 text-red-700 ring-red-200";
@@ -238,6 +287,67 @@ function formatDate(value) {
           >
             <XMarkIcon class="h-4 w-4" />
           </button>
+        </div>
+      </transition>
+
+      <transition
+        enter-active-class="transition duration-200 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition duration-150 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="deleteModalOpen"
+          class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4"
+          @click.self="closeDeleteModal"
+        >
+          <div class="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+            <div class="flex items-start gap-4">
+              <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+                <TrashIcon class="h-6 w-6" />
+              </div>
+              <div class="flex-1">
+                <h3 class="text-lg font-bold text-slate-900">Eliminar reporte</h3>
+                <p class="mt-2 text-sm text-slate-600">
+                  Esta acción eliminará el PDF generado y, si existe, también el acta firmada del historial.
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-5 rounded-2xl bg-slate-50 p-4">
+              <p class="text-sm font-semibold text-slate-900">
+                {{ deleteModalReport?.tipo_reporte_label || "Reporte" }}
+              </p>
+              <p class="mt-1 text-sm text-slate-600">
+                {{ deleteModalReport?.categoria_nombre || "Categoría" }}
+              </p>
+              <p class="mt-1 text-xs text-slate-500">
+                {{ deleteModalReport?.competencia_nombre || "" }}
+              </p>
+            </div>
+
+            <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                class="inline-flex items-center justify-center rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="deleteState.saving"
+                @click="closeDeleteModal"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="deleteState.saving"
+                @click="confirmDeleteReport"
+              >
+                <TrashIcon class="h-4 w-4" />
+                {{ deleteState.saving ? "Eliminando..." : "Sí, eliminar" }}
+              </button>
+            </div>
+          </div>
         </div>
       </transition>
     </Teleport>
@@ -444,6 +554,14 @@ function formatDate(value) {
                     <ArrowDownTrayIcon class="h-4 w-4" />
                     Firmado
                   </a>
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                    @click="openDeleteModal(reporte)"
+                  >
+                    <TrashIcon class="h-4 w-4" />
+                    Eliminar
+                  </button>
                 </div>
               </td>
             </tr>
