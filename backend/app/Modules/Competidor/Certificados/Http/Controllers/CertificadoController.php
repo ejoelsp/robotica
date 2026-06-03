@@ -25,7 +25,8 @@ class CertificadoController extends Controller
 
     public function download(Request $request, int $integrante)
     {
-        $certificado = $this->service->generarParaIntegrante($integrante, $request->user()->id);
+        $tipo = $request->query('tipo');
+        $certificado = $this->service->generarParaIntegrantePorTipo($integrante, $request->user()->id, $tipo);
 
         abort_unless(Storage::disk('public')->exists($certificado->archivo_pdf), 404);
 

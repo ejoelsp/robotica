@@ -71,6 +71,11 @@ class CertificadoService
 
     public function generarParaIntegrante(int $integranteId, int $userId): CertificadoGenerado
     {
+        return $this->generarParaIntegrantePorTipo($integranteId, $userId, null);
+    }
+
+    public function generarParaIntegrantePorTipo(int $integranteId, int $userId, ?string $tipoSolicitado = null): CertificadoGenerado
+    {
         $integrante = InscripcionIntegrante::query()
             ->with([
                 'inscripcion.competencia:id,nombre,fecha_inicio',
@@ -90,16 +95,22 @@ class CertificadoService
 
         $clasificacion = $this->clasificacionPublicada($inscripcion);
         $excluido = $this->inscripcionExcluida($inscripcion);
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $excluido);
 
-        if (! $clasificacion && ! $excluido) {
+        if ($tiposDisponibles === []) {
             throw ValidationException::withMessages([
                 'certificado' => 'El certificado estará disponible cuando los resultados se publiquen.',
             ]);
         }
 
-        $tipo = $clasificacion
-            ? $this->tipoPorPosicion((int) $clasificacion->posicion)
-            : 'participacion';
+        $tipo = $tipoSolicitado ?: 'participacion';
+
+        if (! in_array($tipo, $tiposDisponibles, true)) {
+            throw ValidationException::withMessages([
+                'certificado' => 'El certificado solicitado no está disponible para esta inscripción.',
+            ]);
+        }
+
         $plantilla = $this->plantillaActiva($inscripcion, $tipo);
 
         if (! $plantilla) {
@@ -165,31 +176,31 @@ class CertificadoService
     {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
         $excluido = $this->inscripcionExcluida($inscripcion);
-        $tipo = $clasificacion
-            ? $this->tipoPorPosicion((int) $clasificacion->posicion)
-            : ($excluido ? 'participacion' : null);
-        $plantilla = $tipo ? $this->plantillaActiva($inscripcion, $tipo) : null;
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $excluido);
 
         return $inscripcion->integrantes
             ->sortByDesc(fn (InscripcionIntegrante $integrante) => (bool) $integrante->es_capitan)
-            ->map(fn (InscripcionIntegrante $integrante) => [
-                'integrante_id' => (int) $integrante->id,
-                'participante' => (string) $integrante->nombre_completo,
-                'competencia' => (string) ($inscripcion->competencia?->nombre ?? 'Competencia'),
-                'categoria' => (string) ($inscripcion->categoria?->nombre ?? 'Categoría'),
-                'equipo' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
-                'prototipo' => (string) ($inscripcion->nombre_prototipo ?? 'Sin prototipo'),
-                'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
-                'posicion' => $clasificacion ? (int) $clasificacion->posicion : null,
-                'tipo_certificado' => $tipo,
-                'tipo_label' => $tipo ? ($this->tiposCertificados()[$tipo] ?? $tipo) : null,
-                'disponible' => $tipo !== null && $plantilla !== null,
-                'mensaje' => $clasificacion
-                    ? ($plantilla ? null : 'Falta plantilla activa para este certificado.')
-                    : ($excluido
-                        ? ($plantilla ? null : 'Falta plantilla activa para este certificado.')
-                        : 'Disponible cuando los resultados se publiquen.'),
-            ]);
+            ->flatMap(function (InscripcionIntegrante $integrante) use ($inscripcion, $clasificacion, $tiposDisponibles) {
+                return collect($tiposDisponibles)->map(function (string $tipo) use ($integrante, $inscripcion, $clasificacion) {
+                    $plantilla = $this->plantillaActiva($inscripcion, $tipo);
+
+                    return [
+                        'id' => sprintf('%d-%s', $integrante->id, $tipo),
+                        'integrante_id' => (int) $integrante->id,
+                        'participante' => (string) $integrante->nombre_completo,
+                        'competencia' => (string) ($inscripcion->competencia?->nombre ?? 'Competencia'),
+                        'categoria' => (string) ($inscripcion->categoria?->nombre ?? 'Categoría'),
+                        'equipo' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
+                        'prototipo' => (string) ($inscripcion->nombre_prototipo ?? 'Sin prototipo'),
+                        'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
+                        'posicion' => $tipo === 'participacion' ? null : ($clasificacion ? (int) $clasificacion->posicion : null),
+                        'tipo_certificado' => $tipo,
+                        'tipo_label' => $this->tiposCertificados()[$tipo] ?? $tipo,
+                        'disponible' => $plantilla !== null,
+                        'mensaje' => $plantilla ? null : 'Falta plantilla activa para este certificado.',
+                    ];
+                });
+            });
     }
 
     private function clasificacionPublicada(Inscripcion $inscripcion): ?Clasificacion
@@ -220,6 +231,34 @@ class CertificadoService
             2 => 'segundo_lugar',
             3 => 'tercer_lugar',
             default => 'participacion',
+        };
+    }
+
+    private function tiposDisponiblesParaInscripcion(?Clasificacion $clasificacion, bool $excluido): array
+    {
+        $tipos = ['participacion'];
+
+        if ($clasificacion) {
+            $tipoPodio = $this->tipoPodioPorPosicion((int) $clasificacion->posicion);
+            if ($tipoPodio) {
+                $tipos[] = $tipoPodio;
+            }
+        }
+
+        if ($excluido) {
+            return array_values(array_unique($tipos));
+        }
+
+        return array_values(array_unique($tipos));
+    }
+
+    private function tipoPodioPorPosicion(int $posicion): ?string
+    {
+        return match ($posicion) {
+            1 => 'primer_lugar',
+            2 => 'segundo_lugar',
+            3 => 'tercer_lugar',
+            default => null,
         };
     }
 

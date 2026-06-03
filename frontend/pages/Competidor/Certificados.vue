@@ -64,7 +64,7 @@ defineProps({
       <div class="divide-y divide-slate-200">
         <article
           v-for="item in certificadosCompetidor.items"
-          :key="item.integrante_id"
+          :key="item.id || `${item.integrante_id}-${item.tipo_certificado}`"
           class="grid gap-4 px-4 py-4 sm:gap-5 sm:px-5 sm:py-5 lg:grid-cols-[1.4fr_1.2fr_1fr_auto] lg:items-center"
         >
           <div class="min-w-0">
@@ -92,7 +92,7 @@ defineProps({
           <div class="flex w-full lg:justify-end">
             <a
               v-if="item.disponible"
-              :href="`/competidor/certificados/${item.integrante_id}/descargar`"
+              :href="`/competidor/certificados/${item.integrante_id}/descargar?tipo=${item.tipo_certificado}`"
               class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
             >
               <ArrowDownTrayIcon class="h-5 w-5" />
