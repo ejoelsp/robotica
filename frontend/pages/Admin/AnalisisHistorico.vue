@@ -17,6 +17,7 @@ import {
   TrophyIcon,
   UserGroupIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorMediumDate, formatEcuadorMediumDateTime } from "@/lib/datetime";
 
 defineOptions({ layout: AdminLayout });
 
@@ -302,20 +303,11 @@ function formatPercent(value) {
 }
 
 function formatDate(value) {
-  if (!value) return "sin fecha";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorMediumDateTime(value, "sin fecha");
 }
 
 function formatShortDate(value) {
-  if (!value) return "-";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-  }).format(new Date(value));
+  return formatEcuadorMediumDate(value, "-");
 }
 
 function formatMetric(value, suffix = "") {

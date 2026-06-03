@@ -18,6 +18,7 @@ import {
   PencilSquareIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorDateTime } from "@/lib/datetime";
 
 defineOptions({ layout: AdminLayout });
 
@@ -787,15 +788,7 @@ async function actualizarPublicacion(estado) {
 }
 
 function formatUpdatedAt(value) {
-  if (!value) return "Sin consolidar";
-
-  return new Date(value).toLocaleString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEcuadorDateTime(value, "Sin consolidar");
 }
 
 function formatPublicationAction(action) {
@@ -1703,7 +1696,7 @@ onBeforeUnmount(() => {
                     <template v-if="scope.usa_enfrentamiento">
                       <tr
                         v-for="row in scope.rows"
-                        :key="`${scope.key}-match-${row.encuentro}`"
+                        :key="`${scope.key}-match-${row.encuentro}-${row.inscripcion_id || row.equipo_a}`"
                         class="cursor-pointer transition hover:bg-slate-50"
                         @click="openLiveDetail(scope, row)"
                       >
@@ -1722,7 +1715,7 @@ onBeforeUnmount(() => {
                     <tr
                       v-else
                       v-for="row in scope.rows"
-                      :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`"
+                      :key="`${scope.key}-${row.posicion}-${row.inscripcion_id || row.equipo_nombre}`"
                       class="cursor-pointer transition hover:bg-slate-50"
                       @click="openLiveDetail(scope, row)"
                     >

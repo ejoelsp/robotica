@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import { formatEcuadorMediumDate } from "@/lib/datetime";
 
 const props = defineProps({
   competencias: {
@@ -13,12 +14,11 @@ const competencias = computed(() => props.competencias ?? []);
 const formatFechaRango = (inicio, fin) => {
   if (!inicio) return "Fecha por definir";
 
-  const opts = { day: "2-digit", month: "short", year: "numeric" };
-  const inicioTexto = new Date(inicio).toLocaleDateString("es-EC", opts);
+  const inicioTexto = formatEcuadorMediumDate(inicio, "Fecha por definir");
 
   if (!fin || fin === inicio) return inicioTexto;
 
-  return `Del ${inicioTexto} al ${new Date(fin).toLocaleDateString("es-EC", opts)}`;
+  return `Del ${inicioTexto} al ${formatEcuadorMediumDate(fin, "Fecha por definir")}`;
 };
 
 const openEventLink = (url) => {

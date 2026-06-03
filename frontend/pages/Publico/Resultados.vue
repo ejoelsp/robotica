@@ -7,6 +7,7 @@ import {
   CheckBadgeIcon,
   ClockIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorDateTime } from "@/lib/datetime";
 
 const page = usePage();
 
@@ -41,15 +42,7 @@ function applyFilters() {
 }
 
 function formatUpdatedAt(value) {
-  if (!value) return "Sin fecha";
-
-  return new Date(value).toLocaleString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEcuadorDateTime(value, "Sin fecha");
 }
 
 function publishedResultLabel(row) {
@@ -195,7 +188,7 @@ watch(
             <tbody class="divide-y divide-slate-200">
               <tr
                 v-for="row in vista.rows"
-                :key="`${row.posicion}-${row.equipo_nombre}`"
+                :key="`${row.posicion}-${row.inscripcion_id || row.equipo_nombre}`"
                 class="hover:bg-slate-50/60"
               >
                 <td class="px-3 py-3 sm:px-6 sm:py-4">

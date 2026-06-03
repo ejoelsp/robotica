@@ -193,7 +193,9 @@ class CertificadoService
                         'equipo' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
                         'prototipo' => (string) ($inscripcion->nombre_prototipo ?? 'Sin prototipo'),
                         'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
-                        'posicion' => $tipo === 'participacion' ? null : ($clasificacion ? (int) $clasificacion->posicion : null),
+                        'posicion' => $tipo === 'participacion' || ! $clasificacion
+                            ? null
+                            : $this->posicionPodioCertificado($clasificacion, $this->esRondaDePodio($clasificacion)),
                         'tipo_certificado' => $tipo,
                         'tipo_label' => $this->tiposCertificados()[$tipo] ?? $tipo,
                         'disponible' => $plantilla !== null,
@@ -205,19 +207,28 @@ class CertificadoService
 
     private function clasificacionPublicada(Inscripcion $inscripcion): ?Clasificacion
     {
-        if (! $inscripcion->equipo_id) {
+        if (! $inscripcion->id) {
             return null;
         }
 
-        return Clasificacion::query()
-            ->with('ronda:id,nombre,orden,es_final')
+        $clasificaciones = Clasificacion::query()
+            ->with('ronda:id,nombre,tipo,orden,es_final')
             ->where('competencia_id', $inscripcion->competencia_id)
             ->where('categoria_id', $inscripcion->categoria_id)
-            ->where('equipo_id', $inscripcion->equipo_id)
+            ->where(function ($query) use ($inscripcion) {
+                $query->where('inscripcion_id', $inscripcion->id)
+                    ->orWhereRaw("detalle_json #>> '{evaluaciones,0,inscripcion_id}' = ?", [(string) $inscripcion->id]);
+            })
             ->whereIn('estado_publicacion', ['visible', 'cerrado'])
             ->get()
+            ->values();
+
+        $tieneRondasDePodio = $clasificaciones->contains(fn (Clasificacion $clasificacion) => $this->esRondaDePodio($clasificacion));
+
+        return $clasificaciones
+            ->filter(fn (Clasificacion $clasificacion) => $this->posicionPodioCertificado($clasificacion, $tieneRondasDePodio) !== null)
             ->sortByDesc(fn (Clasificacion $clasificacion) => [
-                (bool) ($clasificacion->ronda?->es_final ?? false) ? 1 : 0,
+                $this->prioridadRondaPodio($clasificacion),
                 (int) ($clasificacion->ronda?->orden ?? 0),
                 (int) $clasificacion->id,
             ])
@@ -239,7 +250,8 @@ class CertificadoService
         $tipos = ['participacion'];
 
         if ($clasificacion) {
-            $tipoPodio = $this->tipoPodioPorPosicion((int) $clasificacion->posicion);
+            $posicionPodio = $this->posicionPodioCertificado($clasificacion, $this->esRondaDePodio($clasificacion));
+            $tipoPodio = $posicionPodio ? $this->tipoPodioPorPosicion($posicionPodio) : null;
             if ($tipoPodio) {
                 $tipos[] = $tipoPodio;
             }
@@ -260,6 +272,49 @@ class CertificadoService
             3 => 'tercer_lugar',
             default => null,
         };
+    }
+
+    private function posicionPodioCertificado(Clasificacion $clasificacion, bool $tieneRondasDePodio): ?int
+    {
+        $tipoRonda = (string) ($clasificacion->ronda?->tipo ?? '');
+        $posicion = (int) $clasificacion->posicion;
+
+        if ((bool) ($clasificacion->ronda?->es_final ?? false) || $tipoRonda === 'final') {
+            return in_array($posicion, [1, 2], true) ? $posicion : null;
+        }
+
+        if ($tipoRonda === 'tercer_lugar') {
+            return $posicion === 1 ? 3 : null;
+        }
+
+        if ($tieneRondasDePodio) {
+            return null;
+        }
+
+        return in_array($posicion, [1, 2, 3], true) ? $posicion : null;
+    }
+
+    private function esRondaDePodio(Clasificacion $clasificacion): bool
+    {
+        $tipoRonda = (string) ($clasificacion->ronda?->tipo ?? '');
+
+        return (bool) ($clasificacion->ronda?->es_final ?? false)
+            || in_array($tipoRonda, ['final', 'tercer_lugar'], true);
+    }
+
+    private function prioridadRondaPodio(Clasificacion $clasificacion): int
+    {
+        $tipoRonda = (string) ($clasificacion->ronda?->tipo ?? '');
+
+        if ((bool) ($clasificacion->ronda?->es_final ?? false) || $tipoRonda === 'final') {
+            return 3;
+        }
+
+        if ($tipoRonda === 'tercer_lugar') {
+            return 2;
+        }
+
+        return 1;
     }
 
     private function inscripcionExcluida(Inscripcion $inscripcion): bool

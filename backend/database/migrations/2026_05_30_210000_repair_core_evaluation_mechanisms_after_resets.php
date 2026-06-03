@@ -24,8 +24,8 @@ return new class extends Migration
                 ],
                 [
                     'codigo' => 'tabla_evaluacion',
-                    'nombre' => 'Tabla de evaluacion',
-                    'descripcion' => 'Evaluacion por criterios configurables con puntaje maximo por criterio.',
+                    'nombre' => 'Tabla de evaluación',
+                    'descripcion' => 'Evaluación por criterios configurables con puntaje máximo por criterio.',
                     'activo' => true,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -41,4 +41,3 @@ return new class extends Migration
         // No eliminamos ni desactivamos catalogo para no afectar datos existentes.
     }
 };
-

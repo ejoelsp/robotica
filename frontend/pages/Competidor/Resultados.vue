@@ -8,6 +8,7 @@ import {
   ChartBarIcon,
   ChevronDownIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorDateOnly, formatEcuadorDateTime } from "@/lib/datetime";
 
 defineOptions({ layout: CompetidorLayout });
 
@@ -50,25 +51,11 @@ function isExpanded(id) {
 }
 
 function formatDate(value) {
-  if (!value) return "Sin fecha";
-
-  return new Date(value).toLocaleString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEcuadorDateTime(value, "Sin fecha");
 }
 
 function formatDateOnly(value) {
-  if (!value) return "Sin fecha";
-
-  return new Date(value).toLocaleDateString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatEcuadorDateOnly(value, "Sin fecha");
 }
 
 function statusLabel(item) {

@@ -53,7 +53,7 @@ const remoteErrors = ref({});
 const remoteCategoryLock = ref({ activo: false, bloqueado: false });
 const remoteSelectedCategoryId = ref(null);
 const remoteSelectedRondaId = ref(null);
-const remoteSelectedTeamId = ref("");
+const remoteSelectedInscripcionId = ref("");
 const remoteSelectedAttemptNumber = ref(1);
 const timeInputDigits = ref("");
 const invalidTimeModalOpen = ref(false);
@@ -234,7 +234,7 @@ const currentRemoteTeam = computed(() => {
   if (!isRemoteMode.value) return null;
 
   return remoteTeams.value.find(
-    (team) => String(team.equipo_id) === String(remoteSelectedTeamId.value)
+    (team) => String(team.inscripcion_id) === String(remoteSelectedInscripcionId.value)
       && Number(team.intento_numero ?? 1) === Number(remoteSelectedAttemptNumber.value || 1)
   ) ?? null;
 });
@@ -316,14 +316,14 @@ function currentSaveWillCompleteEvaluation() {
 }
 
 function remoteTeamKey(item) {
-  return `${String(item?.equipo_id ?? "")}:${Number(item?.intento_numero ?? 1)}`;
+  return `${String(item?.inscripcion_id ?? "")}:${Number(item?.intento_numero ?? 1)}`;
 }
 
 function findRemoteTeamByKey(item) {
-  if (!item?.equipo_id) return null;
+  if (!item?.inscripcion_id) return null;
 
   return remoteTeams.value.find(
-    (team) => String(team.equipo_id) === String(item.equipo_id)
+    (team) => String(team.inscripcion_id) === String(item.inscripcion_id)
       && Number(team.intento_numero ?? 1) === Number(item.intento_numero ?? 1)
   ) ?? null;
 }
@@ -335,7 +335,7 @@ function queueItemForSelection(item) {
 function isCurrentQueueTurn(item) {
   const queueItem = queueItemForSelection(item);
 
-  if (!queueItem?.equipo_id || !currentPendingRemoteTeam.value) return false;
+  if (!queueItem?.inscripcion_id || !currentPendingRemoteTeam.value) return false;
 
   return remoteTeamKey(queueItem) === remoteTeamKey(currentPendingRemoteTeam.value);
 }
@@ -373,7 +373,7 @@ const canFinishCurrentMatch = computed(() => {
   return isRemoteMode.value
     && canUseRemoteRegistration.value
     && isEnfrentamientoSorteo.value
-    && !!remoteSelectedTeamId.value
+    && !!remoteSelectedInscripcionId.value
     && currentVersion.value > 0
     && !currentMatchHasUnsavedChanges.value
     && currentRemoteTeam.value?.sorteo_estado !== "completado";
@@ -398,7 +398,7 @@ const currentRemoteHasUnsavedChanges = computed(() => {
 const shouldShowFinishCurrentMatch = computed(() => {
   return isRemoteMode.value
     && isEnfrentamientoSorteo.value
-    && !!remoteSelectedTeamId.value
+    && !!remoteSelectedInscripcionId.value
     && currentRemoteTeam.value?.sorteo_estado !== "completado";
 });
 
@@ -499,6 +499,7 @@ const sorteoOrdenItems = computed(() => {
       .sort((a, b) => Number(a.orden ?? 0) - Number(b.orden ?? 0))
       .map((detalle) => ({
         orden: detalle.orden,
+        inscripcion_id: detalle.inscripcion_id,
         equipo_id: detalle.equipo_id,
         intento_numero: 1,
         intento_label: "Intento 1",
@@ -511,6 +512,7 @@ const sorteoOrdenItems = computed(() => {
     .sort((a, b) => Number(a.flujo_orden ?? a.sorteo_orden ?? a.inscripcion_id ?? 0) - Number(b.flujo_orden ?? b.sorteo_orden ?? b.inscripcion_id ?? 0))
     .map((team, index) => ({
       orden: team.sorteo_orden ?? index + 1,
+      inscripcion_id: team.inscripcion_id,
       equipo_id: team.equipo_id,
       intento_numero: team.intento_numero ?? 1,
       intento_label: team.intento_label ?? `Intento ${team.intento_numero ?? 1}`,
@@ -1082,11 +1084,11 @@ function shouldShowNextAttemptModalAfterSave() {
     return false;
   }
 
-  const currentTeamId = String(remoteSelectedTeamId.value || "");
+  const currentTeamId = String(remoteSelectedInscripcionId.value || "");
 
   return !remoteTeams.value.some((team) => {
     return Number(team.intento_numero ?? 1) === currentAttempt
-      && String(team.equipo_id) !== currentTeamId
+      && String(team.inscripcion_id) !== currentTeamId
       && !remoteTeamEvaluationComplete(team)
       && team.sorteo_estado !== "completado";
   });
@@ -1314,7 +1316,7 @@ async function loadRemoteContext(options = {}) {
     }
 
     const { data } = await axios.get("/juez/evaluaciones/contexto", { params });
-    const previousTeamId = options.preserveTeam ? String(remoteSelectedTeamId.value || "") : "";
+    const previousTeamId = options.preserveTeam ? String(remoteSelectedInscripcionId.value || "") : "";
     const previousAttempt = options.preserveTeam ? Number(remoteSelectedAttemptNumber.value || 1) : 1;
 
     remoteContext.value = data;
@@ -1332,14 +1334,14 @@ async function loadRemoteContext(options = {}) {
     const isFightDraw = data?.sorteo?.tipo_sorteo === "enfrentamiento";
     const nextPendingTeam = data?.equipos?.find((item) => isRemoteTeamEvaluable(item, isFightDraw));
     const stillPending = data?.equipos?.some(
-      (item) => String(item.equipo_id) === previousTeamId
+      (item) => String(item.inscripcion_id) === previousTeamId
         && Number(item.intento_numero ?? 1) === previousAttempt
         && isRemoteTeamEvaluable(item, isFightDraw)
     );
 
-    remoteSelectedTeamId.value = stillPending
+    remoteSelectedInscripcionId.value = stillPending
       ? previousTeamId
-      : String(nextPendingTeam?.equipo_id ?? "");
+      : String(nextPendingTeam?.inscripcion_id ?? "");
     remoteSelectedAttemptNumber.value = stillPending
       ? previousAttempt
       : Number(nextPendingTeam?.intento_numero ?? 1);
@@ -1349,7 +1351,7 @@ async function loadRemoteContext(options = {}) {
       return;
     }
 
-    if (remoteSelectedTeamId.value) {
+    if (remoteSelectedInscripcionId.value) {
       await loadRemoteForm();
     } else {
       clearRemoteForm();
@@ -1378,7 +1380,7 @@ async function loadRemoteForm() {
     return;
   }
 
-  if (!remoteSelectedRondaId.value || !remoteSelectedTeamId.value) {
+  if (!remoteSelectedRondaId.value || !remoteSelectedInscripcionId.value) {
     clearRemoteForm();
     return;
   }
@@ -1387,7 +1389,7 @@ async function loadRemoteForm() {
     const { data } = await axios.get("/juez/evaluaciones/formulario", {
       params: {
         ronda_id: Number(remoteSelectedRondaId.value),
-        equipo_id: Number(remoteSelectedTeamId.value),
+        inscripcion_id: Number(remoteSelectedInscripcionId.value),
         intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
       },
     });
@@ -1421,7 +1423,7 @@ async function onRemoteTeamChange() {
 }
 
 async function selectRemoteTeamFromSummary(item) {
-  if (!item?.equipo_id) return;
+  if (!item?.inscripcion_id) return;
 
   const queueItem = queueItemForSelection(item);
 
@@ -1430,7 +1432,7 @@ async function selectRemoteTeamFromSummary(item) {
     return;
   }
 
-  remoteSelectedTeamId.value = String(queueItem.equipo_id);
+  remoteSelectedInscripcionId.value = String(queueItem.inscripcion_id);
   remoteSelectedAttemptNumber.value = Number(queueItem.intento_numero || 1);
   await loadRemoteForm();
 }
@@ -1640,7 +1642,7 @@ async function registrarResultadoRemoto() {
     return;
   }
 
-  if (!remoteSelectedRondaId.value || !remoteSelectedTeamId.value) {
+  if (!remoteSelectedRondaId.value || !remoteSelectedInscripcionId.value) {
     setNotice(remoteNotice, "error", "Selecciona una ronda y un equipo antes de guardar.");
     return;
   }
@@ -1680,7 +1682,7 @@ async function registrarResultadoRemoto() {
 
     const { data } = await axios.post("/juez/evaluaciones", {
       ronda_id: Number(remoteSelectedRondaId.value),
-      equipo_id: Number(remoteSelectedTeamId.value),
+      inscripcion_id: Number(remoteSelectedInscripcionId.value),
       intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
       expected_juez_user_id: authenticatedJudgeId.value ? Number(authenticatedJudgeId.value) : null,
       version: Number(remoteForm.version || 0),
@@ -1723,7 +1725,7 @@ async function registrarResultadoRemoto() {
     setNotice(
       remoteNotice,
       "success",
-      remoteSelectedTeamId.value
+      remoteSelectedInscripcionId.value
         ? "Evaluación guardada correctamente. Se cargó el siguiente participante."
         : "Evaluación guardada correctamente. Ya no hay participantes pendientes."
     );
@@ -1761,7 +1763,7 @@ function abrirModalSinTiempoValido() {
     return;
   }
 
-  if (!remoteSelectedRondaId.value || !remoteSelectedTeamId.value) {
+  if (!remoteSelectedRondaId.value || !remoteSelectedInscripcionId.value) {
     setNotice(remoteNotice, "error", "Selecciona una ronda y un equipo antes de marcar sin tiempo válido.");
     return;
   }
@@ -1821,7 +1823,7 @@ async function confirmarSinTiempoValidoRemoto() {
 
     const { data } = await axios.post("/juez/evaluaciones", {
       ronda_id: Number(remoteSelectedRondaId.value),
-      equipo_id: Number(remoteSelectedTeamId.value),
+      inscripcion_id: Number(remoteSelectedInscripcionId.value),
       intento_numero: Number(remoteSelectedAttemptNumber.value || 1),
       expected_juez_user_id: authenticatedJudgeId.value ? Number(authenticatedJudgeId.value) : null,
       version: Number(remoteForm.version || 0),
@@ -1862,7 +1864,7 @@ async function confirmarSinTiempoValidoRemoto() {
     setNotice(
       remoteNotice,
       "success",
-      remoteSelectedTeamId.value
+      remoteSelectedInscripcionId.value
         ? "Intento marcado como Sin tiempo válido. Se cargó el siguiente participante."
         : "Intento marcado como Sin tiempo válido. Ya no hay participantes pendientes."
     );
@@ -1912,7 +1914,7 @@ async function terminarEncuentroRemoto() {
   try {
     const { data } = await axios.post("/juez/evaluaciones/terminar-encuentro", {
       ronda_id: Number(remoteSelectedRondaId.value),
-      equipo_id: Number(remoteSelectedTeamId.value),
+      inscripcion_id: Number(remoteSelectedInscripcionId.value),
       payload: normalizeRemotePayload(),
     });
 
@@ -1925,7 +1927,7 @@ async function terminarEncuentroRemoto() {
     setNotice(
       remoteNotice,
       "success",
-      remoteSelectedTeamId.value
+      remoteSelectedInscripcionId.value
         ? "Encuentro finalizado. Se cargó el siguiente combate pendiente."
         : "Encuentro finalizado. Ya no hay combates pendientes en esta ronda."
     );
@@ -2497,7 +2499,14 @@ onBeforeUnmount(() => {
             class="w-[200px] shrink-0 snap-start overflow-hidden rounded-2xl border text-left transition hover:shadow-md sm:w-[220px]"
             :class="Number(selectedCategoryId) === Number(category.id) ? 'border-blue-400 ring-2 ring-blue-100' : 'border-slate-200'"
           >
-            <div class="h-[98px] w-full bg-cover bg-center sm:h-[110px]" :style="{ backgroundImage: `url(${categoryThumb(category)})` }" />
+            <div class="aspect-[16/9] w-full overflow-hidden bg-slate-950">
+              <img
+                :src="categoryThumb(category)"
+                :alt="category.nombre"
+                class="h-full w-full object-cover object-center"
+                loading="lazy"
+              />
+            </div>
 
             <div class="p-3">
               <p class="font-semibold text-slate-900 leading-tight">{{ category.nombre }}</p>
@@ -2622,13 +2631,13 @@ onBeforeUnmount(() => {
 
               <template v-if="false">
                 <select
-                  v-model="remoteSelectedTeamId"
+                  v-model="remoteSelectedInscripcionId"
                   @change="onRemoteTeamChange"
                   :disabled="!hasCurrentSorteo"
                   class="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <option disabled value="">Selecciona un equipo</option>
-                  <option v-for="team in remoteTeams" :key="team.equipo_id" :value="String(team.equipo_id)">
+                  <option v-for="team in remoteTeams" :key="team.inscripcion_id" :value="String(team.inscripcion_id)">
                     {{ team.sorteo_orden ? `${team.sorteo_orden}. ` : '' }}{{ participantName(team) }} - {{ team.institucion || 'Sin institución' }}
                   </option>
                 </select>
@@ -2646,8 +2655,8 @@ onBeforeUnmount(() => {
                 </select>
               </template>
 
-              <p v-if="getTopLevelError('equipo_id')" class="mt-1 text-xs text-red-600">
-                {{ getTopLevelError("equipo_id") }}
+              <p v-if="getTopLevelError('inscripcion_id')" class="mt-1 text-xs text-red-600">
+                {{ getTopLevelError("inscripcion_id") }}
               </p>
             </div>
 
@@ -2666,8 +2675,8 @@ onBeforeUnmount(() => {
                 </option>
               </select>
 
-              <p v-if="getTopLevelError('equipo_id')" class="mt-1 text-xs text-red-600">
-                {{ getTopLevelError("equipo_id") }}
+              <p v-if="getTopLevelError('inscripcion_id')" class="mt-1 text-xs text-red-600">
+                {{ getTopLevelError("inscripcion_id") }}
               </p>
             </div>
 
@@ -3227,7 +3236,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <div v-if="isRemoteMode && !remoteFormDefinition && remoteSelectedTeamId" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
+            <div v-if="isRemoteMode && !remoteFormDefinition && remoteSelectedInscripcionId" class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500">
               Genera el sorteo de la ronda para habilitar el formulario de evaluación.
             </div>
 
@@ -3286,7 +3295,7 @@ onBeforeUnmount(() => {
               <button
                 type="button"
                 @click="registrarResultado"
-                :disabled="remoteSaving || remoteEndingMatch || (isRemoteMode && (!remoteSelectedTeamId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration))"
+                :disabled="remoteSaving || remoteEndingMatch || (isRemoteMode && (!remoteSelectedInscripcionId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration))"
                 class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <CheckCircleIcon class="h-5 w-5" />
@@ -3297,7 +3306,7 @@ onBeforeUnmount(() => {
                 v-if="isRemoteMode && isTiempoTemplate"
                 type="button"
                 @click="abrirModalSinTiempoValido"
-                :disabled="remoteSaving || remoteEndingMatch || !remoteSelectedTeamId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration"
+                :disabled="remoteSaving || remoteEndingMatch || !remoteSelectedInscripcionId || !hasCurrentSorteo || !canEditRemoteResult || !canUseRemoteRegistration"
                 class="inline-flex items-center justify-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Sin tiempo válido
@@ -3465,7 +3474,7 @@ onBeforeUnmount(() => {
                         <td class="px-3 py-3">
                           <p
                             class="font-semibold text-slate-900"
-                            :class="String(group.items.find((item) => item.lado === 'B')?.equipo_id) === String(remoteSelectedTeamId) ? 'text-blue-700' : ''"
+                            :class="String(group.items.find((item) => item.lado === 'B')?.inscripcion_id) === String(remoteSelectedInscripcionId) ? 'text-blue-700' : ''"
                           >
                             {{ participantName(group.items.find((item) => item.lado === 'B'), "-") }}
                           </p>
@@ -3520,10 +3529,10 @@ onBeforeUnmount(() => {
                   <tbody class="divide-y divide-slate-100 bg-white">
                     <tr
                       v-for="item in sorteoOrdenItems"
-                      :key="`resumen-sorteo-${item.orden}-${item.equipo_id}-${item.intento_numero || 1}`"
+                      :key="`resumen-sorteo-${item.orden}-${item.inscripcion_id}-${item.intento_numero || 1}`"
                       class="transition"
                       :class="[
-                        String(item.equipo_id) === String(remoteSelectedTeamId) && Number(item.intento_numero || 1) === Number(remoteSelectedAttemptNumber || 1) ? 'bg-blue-50' : '',
+                        String(item.inscripcion_id) === String(remoteSelectedInscripcionId) && Number(item.intento_numero || 1) === Number(remoteSelectedAttemptNumber || 1) ? 'bg-blue-50' : '',
                         item.is_selectable ? 'cursor-pointer hover:bg-slate-50' : 'cursor-not-allowed opacity-60'
                       ]"
                       :title="item.is_selectable ? '' : 'Debes registrar el participante actual según el orden del sorteo antes de avanzar.'"

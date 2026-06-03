@@ -833,9 +833,9 @@ class ReporteActaService
 
         $columns = [
             ['label' => 'N.', 'x' => self::MARGIN_X, 'w' => 28],
-            ['label' => 'Equipo', 'x' => self::MARGIN_X + 28, 'w' => 118],
-            ['label' => 'Prototipo', 'x' => self::MARGIN_X + 146, 'w' => 92],
-            ['label' => 'Institución', 'x' => self::MARGIN_X + 238, 'w' => 86],
+            ['label' => 'Equipo', 'x' => self::MARGIN_X + 28, 'w' => 92],
+            ['label' => 'Prototipo', 'x' => self::MARGIN_X + 120, 'w' => 92],
+            ['label' => 'Institución', 'x' => self::MARGIN_X + 212, 'w' => 112],
             ['label' => 'Integrantes', 'x' => self::MARGIN_X + 324, 'w' => 187],
         ];
         $tableWidth = 511.0;
@@ -870,7 +870,11 @@ class ReporteActaService
             foreach ($cells as $index => $cell) {
                 $lines = [];
                 foreach (explode("\n", (string) $cell) as $part) {
-                    array_push($lines, ...$this->wrap($part, 8, $columns[$index]['w'] - 10));
+                    $innerWidth = in_array($index, [1, 2, 3], true)
+                        ? $columns[$index]['w'] - 14
+                        : $columns[$index]['w'] - 10;
+
+                    array_push($lines, ...$this->wrap($part, 8, $innerWidth));
                 }
                 $wrapped[$index] = $lines ?: [''];
                 $maxLines = max($maxLines, count($wrapped[$index]));
@@ -1284,6 +1288,16 @@ class ReporteActaService
         $current = '';
 
         foreach ($words as $word) {
+            if ($this->textWidth($word, $size) > $maxWidth) {
+                if ($current !== '') {
+                    $lines[] = $current;
+                    $current = '';
+                }
+
+                array_push($lines, ...$this->splitLongWord($word, $size, $maxWidth));
+                continue;
+            }
+
             $candidate = trim($current . ' ' . $word);
             if ($current !== '' && $this->textWidth($candidate, $size) > $maxWidth) {
                 $lines[] = $current;
@@ -1301,9 +1315,34 @@ class ReporteActaService
         return $lines ?: [''];
     }
 
+    private function splitLongWord(string $word, float $size, float $maxWidth): array
+    {
+        $chunks = [];
+        $current = '';
+        $characters = preg_split('//u', $word, -1, PREG_SPLIT_NO_EMPTY) ?: str_split($word);
+
+        foreach ($characters as $character) {
+            $candidate = $current . $character;
+
+            if ($current !== '' && $this->textWidth($candidate, $size) > $maxWidth) {
+                $chunks[] = $current;
+                $current = $character;
+                continue;
+            }
+
+            $current = $candidate;
+        }
+
+        if ($current !== '') {
+            $chunks[] = $current;
+        }
+
+        return $chunks ?: [$word];
+    }
+
     private function textWidth(string $text, float $size): float
     {
-        return strlen($this->winAnsi($text)) * $size * 0.48;
+        return strlen($this->winAnsi($text)) * $size * 0.52;
     }
 
     private function winAnsi(string $text): string

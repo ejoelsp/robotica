@@ -15,6 +15,7 @@ import {
   TrashIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorMediumDateTime } from "@/lib/datetime";
 
 defineOptions({ layout: AdminLayout });
 
@@ -247,12 +248,7 @@ function estadoLabel(estado) {
 }
 
 function formatDate(value) {
-  if (!value) return "-";
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  return formatEcuadorMediumDateTime(value, "-");
 }
 </script>
 

@@ -332,9 +332,9 @@ class EvaluacionJuezService
         ];
     }
 
-    public function construirFormulario(User $juez, int $rondaId, int $equipoId, int $intentoNumero = 1, ?string $sessionId = null): array
+    public function construirFormulario(User $juez, int $rondaId, int $inscripcionId, int $intentoNumero = 1, ?string $sessionId = null): array
     {
-        $contexto = $this->resolverContextoEvaluacion($juez, $rondaId, $equipoId, $intentoNumero);
+        $contexto = $this->resolverContextoEvaluacion($juez, $rondaId, $inscripcionId, $intentoNumero);
         $this->asegurarBloqueoRegistroSiAplica($juez, $contexto, $sessionId);
         $resultado = $contexto['resultado'];
         $config = $contexto['config'];
@@ -389,7 +389,7 @@ class EvaluacionJuezService
         $contexto = $this->resolverContextoEvaluacion(
             $juez,
             (int) $payload['ronda_id'],
-            (int) $payload['equipo_id'],
+            (int) $payload['inscripcion_id'],
             $intentoNumero
         );
 
@@ -405,13 +405,13 @@ class EvaluacionJuezService
                 return $this->guardarEvaluacionEnfrentamientoCompleto($juez, $contexto, $config, $campos, $validated);
             }
 
-            $this->bloquearResultadoOficialSiAplica($config, (int) $contexto['ronda']->id, (int) $contexto['inscripcion']->equipo_id, (int) $contexto['intento_numero']);
+            $this->bloquearResultadoOficialPorInscripcionSiAplica($config, (int) $contexto['ronda']->id, (int) $contexto['inscripcion']->id, (int) $contexto['intento_numero']);
 
-            $existente = $this->buscarResultadoSegunEsquema(
+            $existente = $this->buscarResultadoPorInscripcionSegunEsquema(
                 $juez,
                 $config,
                 (int) $contexto['ronda']->id,
-                (int) $contexto['inscripcion']->equipo_id,
+                (int) $contexto['inscripcion']->id,
                 (int) $contexto['intento_numero'],
                 true
             );
@@ -479,7 +479,7 @@ class EvaluacionJuezService
 
         $publicacionAutomatica = $this->publicarResultadoAutomaticamente($resultado, $juez);
 
-        return $this->construirFormulario($juez, (int) $payload['ronda_id'], (int) $payload['equipo_id'], $intentoNumero, $sessionId)
+        return $this->construirFormulario($juez, (int) $payload['ronda_id'], (int) $payload['inscripcion_id'], $intentoNumero, $sessionId)
             + [
                 'guardado' => true,
                 'resultado' => $this->serializarResultado($resultado, $campos),
@@ -496,12 +496,12 @@ class EvaluacionJuezService
     ): Resultado {
         [$sorteo, $detalleActual] = $this->obtenerSorteoYDetalle(
             (int) $contexto['ronda']->id,
-            (int) $contexto['inscripcion']->equipo_id
+            (int) $contexto['inscripcion']->id
         );
 
         if (! $sorteo || ! $detalleActual || $sorteo->tipo_sorteo !== 'enfrentamiento' || $detalleActual->grupo === null) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Esta plantilla requiere un enfrentamiento directo generado en el sorteo.',
+                'inscripcion_id' => 'Esta plantilla requiere un enfrentamiento directo generado en el sorteo.',
             ]);
         }
 
@@ -512,7 +512,7 @@ class EvaluacionJuezService
 
         if ($detallesGrupo->count() < 2) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'El encuentro necesita dos participantes para registrar la tabla de enfrentamiento.',
+                'inscripcion_id' => 'El encuentro necesita dos participantes para registrar la tabla de enfrentamiento.',
             ]);
         }
 
@@ -526,13 +526,13 @@ class EvaluacionJuezService
                 continue;
             }
 
-            $this->bloquearResultadoOficialSiAplica($config, (int) $contexto['ronda']->id, (int) $inscripcion->equipo_id, (int) $contexto['intento_numero']);
+            $this->bloquearResultadoOficialPorInscripcionSiAplica($config, (int) $contexto['ronda']->id, (int) $inscripcion->id, (int) $contexto['intento_numero']);
 
-            $existente = $this->buscarResultadoSegunEsquema(
+            $existente = $this->buscarResultadoPorInscripcionSegunEsquema(
                 $juez,
                 $config,
                 (int) $contexto['ronda']->id,
-                (int) $inscripcion->equipo_id,
+                (int) $inscripcion->id,
                 (int) $contexto['intento_numero'],
                 true
             );
@@ -541,7 +541,7 @@ class EvaluacionJuezService
 
             $versionActual = (int) ($existente?->version ?? 0);
 
-            if ((int) $inscripcion->equipo_id === (int) $contexto['inscripcion']->equipo_id && $existente && $versionEsperada !== $versionActual) {
+            if ((int) $inscripcion->id === (int) $contexto['inscripcion']->id && $existente && $versionEsperada !== $versionActual) {
                 throw new EvaluacionConcurrencyException($existente->fresh());
             }
 
@@ -595,57 +595,57 @@ class EvaluacionJuezService
                 $validated['motivo_cambio'] ?? null
             );
 
-            if ((int) $inscripcion->equipo_id === (int) $contexto['inscripcion']->equipo_id) {
+            if ((int) $inscripcion->id === (int) $contexto['inscripcion']->id) {
                 $resultadoSeleccionado = $resultado->fresh();
             }
         }
 
         if (! $resultadoSeleccionado) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'No se pudo registrar el resultado del equipo seleccionado.',
+                'inscripcion_id' => 'No se pudo registrar el resultado del participante seleccionado.',
             ]);
         }
 
         return $resultadoSeleccionado;
     }
 
-    public function terminarEncuentro(User $juez, int $rondaId, int $equipoId, array $payloadActual = [], ?string $sessionId = null): array
+    public function terminarEncuentro(User $juez, int $rondaId, int $inscripcionId, array $payloadActual = [], ?string $sessionId = null): array
     {
-        $contexto = $this->resolverContextoEvaluacion($juez, $rondaId, $equipoId);
+        $contexto = $this->resolverContextoEvaluacion($juez, $rondaId, $inscripcionId);
         $this->asegurarBloqueoRegistroSiAplica($juez, $contexto, $sessionId);
-        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $contexto['ronda']->id, (int) $contexto['inscripcion']->equipo_id);
+        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $contexto['ronda']->id, (int) $contexto['inscripcion']->id);
 
         if (! $sorteo || ! $detalle || $sorteo->tipo_sorteo !== 'enfrentamiento' || $detalle->grupo === null) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Esta acción solo está disponible para encuentros de enfrentamiento directo.',
+                'inscripcion_id' => 'Esta acción solo está disponible para encuentros de enfrentamiento directo.',
             ]);
         }
 
-        $equipoIdsGrupo = $sorteo->detalles
+        $inscripcionIdsGrupo = $sorteo->detalles
             ->filter(fn (SorteoDetalle $item) => (int) $item->grupo === (int) $detalle->grupo && $item->estado !== 'directo')
-            ->map(fn (SorteoDetalle $item) => (int) ($item->inscripcion?->equipo_id ?? 0))
+            ->map(fn (SorteoDetalle $item) => (int) ($item->inscripcion_id ?? 0))
             ->filter()
             ->values();
 
         if ($this->esquemaJueces($contexto['config']) === 'evaluacion_multi_juez') {
-            $grupoCompleto = $equipoIdsGrupo->every(fn (int $grupoEquipoId) => $this->evaluacionEquipoIntentoCompleta(
+            $grupoCompleto = $inscripcionIdsGrupo->every(fn (int $grupoInscripcionId) => $this->evaluacionInscripcionIntentoCompleta(
                 (int) $contexto['categoria']->id,
                 (int) $contexto['ronda']->id,
-                $grupoEquipoId,
+                $grupoInscripcionId,
                 (int) $contexto['intento_numero'],
                 $contexto['config']
             ));
 
             if (! $grupoCompleto) {
                 throw ValidationException::withMessages([
-                    'equipo_id' => 'El encuentro no puede finalizar hasta que todos los jueces asignados registren su calificacion.',
+                    'inscripcion_id' => 'El encuentro no puede finalizar hasta que todos los jueces asignados registren su calificacion.',
                 ]);
             }
         }
 
         $resultadosGuardadosQuery = Resultado::query()
             ->where('ronda_id', $contexto['ronda']->id)
-            ->whereIn('equipo_id', $equipoIdsGrupo);
+            ->whereIn('inscripcion_id', $inscripcionIdsGrupo);
 
         if (! $this->usaRegistroCualquierJuez($contexto['config'])) {
             $resultadosGuardadosQuery->where('juez_user_id', $juez->id);
@@ -657,7 +657,7 @@ class EvaluacionJuezService
 
         if ($resultadosGuardados->isEmpty()) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Guarda el resultado del encuentro antes de finalizarlo.',
+                'inscripcion_id' => 'Guarda el resultado del encuentro antes de finalizarlo.',
             ]);
         }
 
@@ -1119,9 +1119,9 @@ class EvaluacionJuezService
 
         $resultado = Resultado::query()
             ->where('ronda_id', $sorteo->ronda_id)
-            ->whereIn('equipo_id', [
-                (int) $detalleA->inscripcion->equipo_id,
-                (int) $detalleB->inscripcion->equipo_id,
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion->id,
+                (int) $detalleB->inscripcion->id,
             ])
             ->whereIn('estado', ['registrado', 'publicado'])
             ->latest('updated_at')
@@ -1148,15 +1148,15 @@ class EvaluacionJuezService
         } else {
             $resultados = Resultado::query()
                 ->where('ronda_id', $sorteo->ronda_id)
-                ->whereIn('equipo_id', [
-                    (int) $detalleA->inscripcion->equipo_id,
-                    (int) $detalleB->inscripcion->equipo_id,
+                ->whereIn('inscripcion_id', [
+                    (int) $detalleA->inscripcion->id,
+                    (int) $detalleB->inscripcion->id,
                 ])
                 ->whereIn('estado', ['registrado', 'publicado'])
                 ->get()
-                ->keyBy(fn (Resultado $item) => (int) $item->equipo_id);
-            $valorA = $resultados->get((int) $detalleA->inscripcion->equipo_id)?->valor_principal;
-            $valorB = $resultados->get((int) $detalleB->inscripcion->equipo_id)?->valor_principal;
+                ->keyBy(fn (Resultado $item) => (int) ($item->inscripcion_id ?? 0));
+            $valorA = $resultados->get((int) $detalleA->inscripcion->id)?->valor_principal;
+            $valorB = $resultados->get((int) $detalleB->inscripcion->id)?->valor_principal;
         }
 
         if ($valorA === null || $valorB === null || (float) $valorA === (float) $valorB) {
@@ -1336,7 +1336,8 @@ class EvaluacionJuezService
 
     private function marcarSorteoCompletado(Resultado $resultado): void
     {
-        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $resultado->ronda_id, (int) $resultado->equipo_id);
+        $inscripcionId = (int) ($resultado->inscripcion_id ?? 0);
+        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $resultado->ronda_id, $inscripcionId);
 
         if (! $detalle || $detalle->estado === 'directo') {
             return;
@@ -1348,10 +1349,10 @@ class EvaluacionJuezService
                 ->value('cantidad_intentos') ?? 1));
 
             $intentosRegistrados = collect(range(1, $cantidadIntentos))
-                ->filter(fn (int $intentoNumero) => $this->evaluacionEquipoIntentoCompleta(
+                ->filter(fn (int $intentoNumero) => $this->evaluacionInscripcionIntentoCompleta(
                     (int) $resultado->categoria_id,
                     (int) $resultado->ronda_id,
-                    (int) $resultado->equipo_id,
+                    $inscripcionId,
                     $intentoNumero,
                     ConfigCalificacion::query()->where('categoria_id', $resultado->categoria_id)->first()
                 ))
@@ -1386,12 +1387,12 @@ class EvaluacionJuezService
 
     private function resultadoEsEnfrentamiento(Resultado $resultado): bool
     {
-        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $resultado->ronda_id, (int) $resultado->equipo_id);
+        [$sorteo, $detalle] = $this->obtenerSorteoYDetalle((int) $resultado->ronda_id, (int) ($resultado->inscripcion_id ?? 0));
 
         return $sorteo?->tipo_sorteo === 'enfrentamiento' && $detalle?->grupo !== null;
     }
 
-    private function obtenerSorteoYDetalle(int $rondaId, int $equipoId): array
+    private function obtenerSorteoYDetalle(int $rondaId, int $inscripcionId): array
     {
         $sorteo = Sorteo::query()
             ->with('detalles.inscripcion')
@@ -1404,7 +1405,7 @@ class EvaluacionJuezService
         }
 
         $detalle = $sorteo->detalles
-            ->first(fn (SorteoDetalle $item) => (int) ($item->inscripcion?->equipo_id ?? 0) === $equipoId);
+            ->first(fn (SorteoDetalle $item) => (int) ($item->inscripcion_id ?? 0) === $inscripcionId);
 
         return [$sorteo, $detalle];
     }
@@ -1460,8 +1461,8 @@ class EvaluacionJuezService
                 });
         }
 
-        $equiposEsperados = $detallesEvaluables
-            ->map(fn (SorteoDetalle $detalle) => (int) $detalle->inscripcion->equipo_id)
+        $inscripcionesEsperadas = $detallesEvaluables
+            ->map(fn (SorteoDetalle $detalle) => (int) $detalle->inscripcion->id)
             ->unique()
             ->values();
 
@@ -1473,12 +1474,12 @@ class EvaluacionJuezService
             ->where('categoria_id', (int) ($sorteo->categoria_id ?? Ronda::query()->whereKey($rondaId)->value('categoria_id')))
             ->first();
 
-        return $equiposEsperados->every(
-            fn (int $equipoId) => collect(range(1, $cantidadIntentos))->every(
-                fn (int $intentoNumero) => $this->evaluacionEquipoIntentoCompleta(
+        return $inscripcionesEsperadas->every(
+            fn (int $inscripcionId) => collect(range(1, $cantidadIntentos))->every(
+                fn (int $intentoNumero) => $this->evaluacionInscripcionIntentoCompleta(
                     (int) ($config?->categoria_id ?? 0),
                     $rondaId,
-                    $equipoId,
+                    $inscripcionId,
                     $intentoNumero,
                     $config
                 )
@@ -1486,7 +1487,7 @@ class EvaluacionJuezService
         );
     }
 
-    private function resolverContextoEvaluacion(User $juez, int $rondaId, int $equipoId, int $intentoNumero = 1): array
+    private function resolverContextoEvaluacion(User $juez, int $rondaId, int $inscripcionId, int $intentoNumero = 1): array
     {
         $ronda = Ronda::query()->with('categoria.competencia')->find($rondaId);
 
@@ -1522,15 +1523,15 @@ class EvaluacionJuezService
 
         $inscripcion = Inscripcion::query()
             ->with('equipo')
+            ->whereKey($inscripcionId)
             ->where('competencia_id', $categoria->competencia_id)
             ->where('categoria_id', $categoria->id)
-            ->where('equipo_id', $equipoId)
             ->aprobadas()
             ->first();
 
         if (! $inscripcion) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'El equipo no tiene una inscripción aprobada en la categoría seleccionada.',
+                'inscripcion_id' => 'El participante no tiene una inscripción aprobada en la categoría seleccionada.',
             ]);
         }
 
@@ -1546,22 +1547,22 @@ class EvaluacionJuezService
 
             if (! $participanteValido) {
                 throw ValidationException::withMessages([
-                    'equipo_id' => 'El participante no esta habilitado para esta ronda.',
+                    'inscripcion_id' => 'El participante no esta habilitado para esta ronda.',
                 ]);
             }
         }
 
         if (! $rondaTieneParticipantes && $ronda->ronda_origen_id) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Esta ronda todavia no tiene participantes clasificados asignados.',
+                'inscripcion_id' => 'Esta ronda todavia no tiene participantes clasificados asignados.',
             ]);
         }
 
-        $resultado = $this->buscarResultadoSegunEsquema(
+        $resultado = $this->buscarResultadoPorInscripcionSegunEsquema(
             $juez,
             $config,
             (int) $ronda->id,
-            (int) $equipoId,
+            (int) $inscripcion->id,
             (int) $intentoNumero
         );
 
@@ -1575,7 +1576,7 @@ class EvaluacionJuezService
 
         if (! $inscripcionEnSorteo) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Genera el sorteo de esta ronda antes de registrar resultados o selecciona un participante de ronda previa.',
+                'inscripcion_id' => 'Genera el sorteo de esta ronda antes de registrar resultados o selecciona un participante de ronda previa.',
             ]);
         }
 
@@ -1669,11 +1670,11 @@ class EvaluacionJuezService
         if ($sorteo->tipo_sorteo === 'enfrentamiento') {
             return $equiposOrdenados
                 ->map(function (array $equipo) use ($juez, $rondaId, $config, $categoriaId) {
-                    $resultado = $this->buscarResultadoSegunEsquema(
+                    $resultado = $this->buscarResultadoPorInscripcionSegunEsquema(
                         $juez,
                         $config,
                         $rondaId,
-                        (int) $equipo['equipo_id'],
+                        (int) $equipo['inscripcion_id'],
                         1
                     );
 
@@ -1688,7 +1689,7 @@ class EvaluacionJuezService
                         'resultado_registrado_por_otro_juez' => $resultado
                             ? (int) $resultado->juez_user_id !== (int) $juez->id
                             : false,
-                        ...$this->resumenEvaluacionEquipoIntento($categoriaId, $rondaId, (int) $equipo['equipo_id'], 1, $config),
+                        ...$this->resumenEvaluacionInscripcionIntento($categoriaId, $rondaId, (int) $equipo['inscripcion_id'], 1, $config),
                         'actualizado_at' => optional($resultado?->updated_at)?->toIso8601String(),
                     ];
                 })
@@ -1713,7 +1714,7 @@ class EvaluacionJuezService
 
         $resultados = $resultadosQuery
             ->get()
-            ->keyBy(fn (Resultado $resultado) => ((int) $resultado->equipo_id) . ':' . ((int) ($resultado->intento_numero ?? 1)));
+            ->keyBy(fn (Resultado $resultado) => ((int) ($resultado->inscripcion_id ?? 0)) . ':' . ((int) ($resultado->intento_numero ?? 1)));
 
         $items = collect();
         $flujoOrden = 1;
@@ -1721,7 +1722,7 @@ class EvaluacionJuezService
         $categoriaId = (int) ($config?->categoria_id ?? 0);
 
         $agregar = function (array $equipo, int $intentoNumero) use ($items, $resultados, $juez, $rondaId, $config, $categoriaId, &$flujoOrden) {
-            $resultado = $resultados->get(((int) $equipo['equipo_id']) . ':' . $intentoNumero);
+            $resultado = $resultados->get(((int) $equipo['inscripcion_id']) . ':' . $intentoNumero);
 
             $items->push($equipo + [
                 'flujo_orden' => $flujoOrden++,
@@ -1735,7 +1736,7 @@ class EvaluacionJuezService
                 'resultado_registrado_por_otro_juez' => $resultado
                     ? (int) $resultado->juez_user_id !== (int) $juez->id
                     : false,
-                ...$this->resumenEvaluacionEquipoIntento($categoriaId, $rondaId, (int) $equipo['equipo_id'], $intentoNumero, $config),
+                ...$this->resumenEvaluacionInscripcionIntento($categoriaId, $rondaId, (int) $equipo['inscripcion_id'], $intentoNumero, $config),
                 'actualizado_at' => optional($resultado?->updated_at)?->toIso8601String(),
             ]);
         };
@@ -2002,28 +2003,28 @@ class EvaluacionJuezService
             ->count('juez_user_id'));
     }
 
-    private function registrosEvaluacionEquipoIntento(int $rondaId, int $equipoId, int $intentoNumero): int
+    private function registrosEvaluacionInscripcionIntento(int $rondaId, int $inscripcionId, int $intentoNumero): int
     {
         return Resultado::query()
             ->where('ronda_id', $rondaId)
-            ->where('equipo_id', $equipoId)
+            ->where('inscripcion_id', $inscripcionId)
             ->where('intento_numero', $intentoNumero)
             ->whereIn('estado', ['registrado', 'publicado'])
             ->distinct('juez_user_id')
             ->count('juez_user_id');
     }
 
-    private function resumenEvaluacionEquipoIntento(
+    private function resumenEvaluacionInscripcionIntento(
         int $categoriaId,
         int $rondaId,
-        int $equipoId,
+        int $inscripcionId,
         int $intentoNumero,
         ?ConfigCalificacion $config
     ): array {
         $requeridas = $this->esquemaJueces($config) === 'evaluacion_multi_juez'
             ? $this->juecesRequeridosCategoria($categoriaId)
             : 1;
-        $registradas = $this->registrosEvaluacionEquipoIntento($rondaId, $equipoId, $intentoNumero);
+        $registradas = $this->registrosEvaluacionInscripcionIntento($rondaId, $inscripcionId, $intentoNumero);
         $pendientes = max(0, $requeridas - $registradas);
 
         return [
@@ -2034,14 +2035,14 @@ class EvaluacionJuezService
         ];
     }
 
-    private function evaluacionEquipoIntentoCompleta(
+    private function evaluacionInscripcionIntentoCompleta(
         int $categoriaId,
         int $rondaId,
-        int $equipoId,
+        int $inscripcionId,
         int $intentoNumero,
         ?ConfigCalificacion $config
     ): bool {
-        return (bool) $this->resumenEvaluacionEquipoIntento($categoriaId, $rondaId, $equipoId, $intentoNumero, $config)['evaluacion_completa'];
+        return (bool) $this->resumenEvaluacionInscripcionIntento($categoriaId, $rondaId, $inscripcionId, $intentoNumero, $config)['evaluacion_completa'];
     }
 
     private function validarTurnoActualSorteo(User $juez, array $contexto): void
@@ -2054,17 +2055,17 @@ class EvaluacionJuezService
             (int) $contexto['categoria']->id,
             (int) $contexto['ronda']->id
         ));
-        $equipoSolicitado = (int) $contexto['inscripcion']->equipo_id;
+        $inscripcionSolicitada = (int) $contexto['inscripcion']->id;
         $intentoSolicitado = (int) $contexto['intento_numero'];
 
-        $itemSolicitado = $items->first(function (array $item) use ($equipoSolicitado, $intentoSolicitado) {
-            return (int) ($item['equipo_id'] ?? 0) === $equipoSolicitado
+        $itemSolicitado = $items->first(function (array $item) use ($inscripcionSolicitada, $intentoSolicitado) {
+            return (int) ($item['inscripcion_id'] ?? 0) === $inscripcionSolicitada
                 && (int) ($item['intento_numero'] ?? 1) === $intentoSolicitado;
         });
 
         if (! $itemSolicitado) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'El participante seleccionado no pertenece al sorteo actual.',
+                'inscripcion_id' => 'El participante seleccionado no pertenece al sorteo actual.',
             ]);
         }
 
@@ -2079,33 +2080,33 @@ class EvaluacionJuezService
 
         if (! $turnoActual) {
             throw ValidationException::withMessages([
-                'equipo_id' => 'Ya no hay participantes pendientes para esta ronda.',
+                'inscripcion_id' => 'Ya no hay participantes pendientes para esta ronda.',
             ]);
         }
 
-        $equipoActual = (int) ($turnoActual['equipo_id'] ?? 0);
+        $inscripcionActual = (int) ($turnoActual['inscripcion_id'] ?? 0);
         $intentoActual = (int) ($turnoActual['intento_numero'] ?? 1);
-        if ($equipoActual === $equipoSolicitado && $intentoActual === $intentoSolicitado) {
+        if ($inscripcionActual === $inscripcionSolicitada && $intentoActual === $intentoSolicitado) {
             return;
         }
 
         throw ValidationException::withMessages([
-            'equipo_id' => 'Debes registrar el participante actual segun el orden del sorteo antes de avanzar.',
+            'inscripcion_id' => 'Debes registrar el participante actual segun el orden del sorteo antes de avanzar.',
         ]);
     }
 
-    private function buscarResultadoSegunEsquema(
+    private function buscarResultadoPorInscripcionSegunEsquema(
         User $juez,
         ?ConfigCalificacion $config,
         int $rondaId,
-        int $equipoId,
+        int $inscripcionId,
         int $intentoNumero = 1,
         bool $lockForUpdate = false
     ): ?Resultado {
         $query = Resultado::query()
             ->with('juez:id,name,last_name,email')
             ->where('ronda_id', $rondaId)
-            ->where('equipo_id', $equipoId)
+            ->where('inscripcion_id', $inscripcionId)
             ->where('intento_numero', $intentoNumero);
 
         if ($this->esquemaJueces($config) === 'evaluacion_multi_juez') {
@@ -2130,7 +2131,7 @@ class EvaluacionJuezService
         $fallback = Resultado::query()
             ->with('juez:id,name,last_name,email')
             ->where('ronda_id', $rondaId)
-            ->where('equipo_id', $equipoId)
+            ->where('inscripcion_id', $inscripcionId)
             ->where('juez_user_id', $juez->id)
             ->where('intento_numero', $intentoNumero);
 
@@ -2144,14 +2145,14 @@ class EvaluacionJuezService
             ->first();
     }
 
-    private function bloquearResultadoOficialSiAplica(?ConfigCalificacion $config, int $rondaId, int $equipoId, int $intentoNumero): void
+    private function bloquearResultadoOficialPorInscripcionSiAplica(?ConfigCalificacion $config, int $rondaId, int $inscripcionId, int $intentoNumero): void
     {
         if (! $this->usaRegistroCualquierJuez($config) || DB::connection()->getDriverName() !== 'pgsql') {
             return;
         }
 
         DB::statement('SELECT pg_advisory_xact_lock(hashtext(?))', [
-            "resultado-oficial:{$rondaId}:{$equipoId}:{$intentoNumero}",
+            "resultado-oficial:{$rondaId}:{$inscripcionId}:{$intentoNumero}",
         ]);
     }
 
@@ -2181,7 +2182,7 @@ class EvaluacionJuezService
         }
 
         throw ValidationException::withMessages([
-            'equipo_id' => 'Esta evaluacion pertenece a otro juez. Recarga la pagina antes de registrar tu calificacion.',
+            'inscripcion_id' => 'Esta evaluacion pertenece a otro juez. Recarga la pagina antes de registrar tu calificacion.',
         ]);
     }
 
@@ -2557,7 +2558,8 @@ class EvaluacionJuezService
     {
         $rules = [
             'ronda_id' => ['required', 'integer', 'min:1'],
-            'equipo_id' => ['required', 'integer', 'min:1'],
+            'equipo_id' => ['nullable', 'integer', 'min:1'],
+            'inscripcion_id' => ['nullable', 'integer', 'min:1'],
             'intento_numero' => ['nullable', 'integer', 'min:1', 'max:10'],
             'version' => ['nullable', 'integer', 'min:0'],
             'motivo_cambio' => ['nullable', 'string', 'max:255'],
@@ -2647,10 +2649,14 @@ class EvaluacionJuezService
             $rules,
             [
                 'ronda_id.required' => 'La ronda es obligatoria.',
-                'equipo_id.required' => 'El equipo es obligatorio.',
+                'inscripcion_id.required' => 'El participante es obligatorio.',
                 'payload.array' => 'Los datos de evaluación deben enviarse como objeto.',
             ]
-        )->validate();
+        )->after(function ($validator) use ($payload) {
+            if (! filled($payload['equipo_id'] ?? null) && ! filled($payload['inscripcion_id'] ?? null)) {
+                $validator->errors()->add('inscripcion_id', 'El participante es obligatorio.');
+            }
+        })->validate();
     }
 
     private function normalizarValoresEvaluacion(

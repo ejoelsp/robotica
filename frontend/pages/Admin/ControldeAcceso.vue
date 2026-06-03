@@ -15,6 +15,7 @@ import {
   XCircleIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorMediumDateTime } from "@/lib/datetime";
 
 defineOptions({ layout: AdminLayout });
 
@@ -272,14 +273,7 @@ function initials(user) {
 }
 
 function formatDate(value) {
-  if (!value) return "Sin registro";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-
-  return new Intl.DateTimeFormat("es-EC", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return formatEcuadorMediumDateTime(value, value || "Sin registro");
 }
 
 function estadoClass(active) {

@@ -15,6 +15,7 @@ class Clasificacion extends Model
         'competencia_id',
         'categoria_id',
         'equipo_id',
+        'inscripcion_id',
         'ronda_id',
         'puntaje_total',
         'tiempo_total',
@@ -50,6 +51,11 @@ class Clasificacion extends Model
     public function equipo()
     {
         return $this->belongsTo(Equipo::class, 'equipo_id');
+    }
+
+    public function inscripcion()
+    {
+        return $this->belongsTo(Inscripcion::class, 'inscripcion_id');
     }
 
     public function ronda()

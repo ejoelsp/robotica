@@ -15,7 +15,7 @@ class GuardarEvaluacionRequest extends FormRequest
     {
         return [
             'ronda_id' => ['required', 'integer', 'min:1'],
-            'equipo_id' => ['required', 'integer', 'min:1'],
+            'inscripcion_id' => ['required', 'integer', 'min:1'],
             'intento_numero' => ['nullable', 'integer', 'min:1', 'max:10'],
             'expected_juez_user_id' => ['nullable', 'integer', 'min:1'],
             'version' => ['nullable', 'integer', 'min:0'],
@@ -44,7 +44,7 @@ class GuardarEvaluacionRequest extends FormRequest
     {
         return [
             'ronda_id.required' => 'La ronda es obligatoria.',
-            'equipo_id.required' => 'El equipo es obligatorio.',
+            'inscripcion_id.required' => 'El participante es obligatorio.',
             'payload.array' => 'Los datos de la evaluación deben enviarse como objeto.',
         ];
     }

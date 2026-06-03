@@ -85,7 +85,7 @@ class ClasificacionConsolidacionService
             ],
             'summary' => [
                 'evaluaciones_count' => $evaluaciones->count(),
-                'equipos_evaluados_count' => $evaluaciones->pluck('equipo_id')->unique()->count(),
+                'equipos_evaluados_count' => $evaluaciones->pluck('inscripcion_id')->filter()->unique()->count(),
                 'jueces_count' => $evaluaciones->pluck('juez_user_id')->unique()->count(),
                 'clasificaciones_count' => count($clasificaciones),
                 'estado_publicacion' => $clasificaciones[0]['estado_publicacion'] ?? 'sin_consolidar',
@@ -130,6 +130,7 @@ class ClasificacionConsolidacionService
                     'competencia_id' => $competenciaId,
                     'categoria_id' => $categoria->id,
                     'equipo_id' => $fila['equipo_id'],
+                    'inscripcion_id' => $fila['inscripcion_id'] ?? null,
                     'ronda_id' => $ronda->id,
                     'puntaje_total' => $fila['puntaje_total'] ?? 0,
                     'tiempo_total' => $fila['tiempo_total'],
@@ -200,6 +201,7 @@ class ClasificacionConsolidacionService
                     'competencia_id' => $competenciaId,
                     'categoria_id' => $categoria->id,
                     'equipo_id' => $fila['equipo_id'],
+                    'inscripcion_id' => $fila['inscripcion_id'] ?? null,
                     'ronda_id' => $ronda->id,
                     'puntaje_total' => $fila['puntaje_total'] ?? 0,
                     'tiempo_total' => $fila['tiempo_total'],
@@ -298,7 +300,7 @@ class ClasificacionConsolidacionService
         [$categoria, $ronda, $config] = $this->resolverScopePublico($competenciaId, $categoriaId, $rondaId);
 
         $clasificaciones = Clasificacion::query()
-            ->with('equipo:id,nombre,institucion')
+            ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
             ->where('resultados.clasificaciones.competencia_id', $competenciaId)
             ->where('categoria_id', $categoria->id)
             ->where('ronda_id', $ronda->id)
@@ -370,7 +372,7 @@ class ClasificacionConsolidacionService
 
         if ($tercerLugar && count($rows) < 3) {
             $tercero = Clasificacion::query()
-                ->with('equipo:id,nombre,institucion')
+                ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                 ->where('competencia_id', $competenciaId)
                 ->where('categoria_id', $categoria->id)
                 ->where('ronda_id', $tercerLugar->id)
@@ -378,7 +380,7 @@ class ClasificacionConsolidacionService
                 ->orderBy('posicion')
                 ->first();
 
-            if ($tercero && ! collect($rows)->contains(fn (array $row) => (int) ($row['equipo_id'] ?? 0) === (int) $tercero->equipo_id)) {
+            if ($tercero && ! collect($rows)->contains(fn (array $row) => (int) ($row['inscripcion_id'] ?? 0) === $this->clasificacionInscripcionId($tercero))) {
                 $rows[] = $this->filaPodioDesdeClasificacion(
                     $tercero,
                     $config,
@@ -430,9 +432,9 @@ class ClasificacionConsolidacionService
 
         $resultado = Resultado::query()
             ->where('ronda_id', $final->id)
-            ->whereIn('equipo_id', [
-                (int) $detalleA->inscripcion->equipo_id,
-                (int) $detalleB->inscripcion->equipo_id,
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion_id,
+                (int) $detalleB->inscripcion_id,
             ])
             ->whereIn('estado', ['registrado', 'publicado'])
             ->latest('updated_at')
@@ -455,7 +457,7 @@ class ClasificacionConsolidacionService
             : (float) $valores['a'] > (float) $valores['b'];
         $ganador = $ganaA ? $detalleA : $detalleB;
         $perdedor = $ganaA ? $detalleB : $detalleA;
-        $clasificacionBase = $clasificacionesFinal->firstWhere('equipo_id', (int) $ganador->inscripcion->equipo_id)
+        $clasificacionBase = $clasificacionesFinal->first(fn (Clasificacion $item) => $this->clasificacionInscripcionId($item) === (int) $ganador->inscripcion_id)
             ?? $clasificacionesFinal->first();
         $estado = (string) ($clasificacionBase?->estado_publicacion ?? 'cerrado');
 
@@ -576,23 +578,53 @@ class ClasificacionConsolidacionService
         return $equipoNombre !== '' ? $equipoNombre : $fallback;
     }
 
+    private function clasificacionInscripcionId(Clasificacion $clasificacion): int
+    {
+        $inscripcionId = (int) ($clasificacion->inscripcion_id ?? 0);
+
+        if ($inscripcionId > 0) {
+            return $inscripcionId;
+        }
+
+        $evaluacion = $clasificacion->detalle_json['evaluaciones'][0] ?? [];
+
+        return (int) ($evaluacion['inscripcion_id'] ?? 0);
+    }
+
     private function nombreParticipanteDesdeClasificacion(Clasificacion $clasificacion, string $fallback = ''): string
     {
+        if ($clasificacion->inscripcion) {
+            return $this->nombrePublicoParticipante(
+                $clasificacion->inscripcion->nombre_prototipo,
+                $clasificacion->equipo?->nombre ?? $clasificacion->inscripcion->equipo?->nombre,
+                $fallback
+            );
+        }
+
         $key = implode(':', [
             (int) $clasificacion->competencia_id,
             (int) $clasificacion->categoria_id,
+            $this->clasificacionInscripcionId($clasificacion),
             (int) $clasificacion->equipo_id,
         ]);
 
         if (! array_key_exists($key, $this->nombrePrototipoPorClasificacion)) {
-            $this->nombrePrototipoPorClasificacion[$key] = Inscripcion::query()
+            $query = Inscripcion::query()
                 ->where('competencia_id', $clasificacion->competencia_id)
                 ->where('categoria_id', $clasificacion->categoria_id)
-                ->where('equipo_id', $clasificacion->equipo_id)
                 ->whereNotNull('nombre_prototipo')
-                ->where('nombre_prototipo', '!=', '')
-                ->orderByDesc('id')
-                ->value('nombre_prototipo');
+                ->where('nombre_prototipo', '!=', '');
+
+            $inscripcionId = $this->clasificacionInscripcionId($clasificacion);
+
+            if ($inscripcionId > 0) {
+                $query->where('id', $inscripcionId);
+            } else {
+                $query->where('equipo_id', $clasificacion->equipo_id)
+                    ->orderByDesc('id');
+            }
+
+            $this->nombrePrototipoPorClasificacion[$key] = $query->value('nombre_prototipo');
         }
 
         return $this->nombrePublicoParticipante(
@@ -614,6 +646,7 @@ class ClasificacionConsolidacionService
         $equipo = $inscripcion?->equipo;
 
         return [
+            'inscripcion_id' => (int) ($inscripcion?->id ?? 0),
             'equipo_id' => (int) ($inscripcion?->equipo_id ?? 0),
             'posicion' => $posicion,
             'equipo_nombre' => $this->nombrePublicoParticipante(
@@ -647,6 +680,7 @@ class ClasificacionConsolidacionService
         }
 
         return [
+            'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
             'equipo_id' => (int) $clasificacion->equipo_id,
             'posicion' => $posicion,
             'equipo_nombre' => $this->nombreParticipanteDesdeClasificacion($clasificacion),
@@ -690,7 +724,7 @@ class ClasificacionConsolidacionService
 
             foreach ($categoria->rondas->sortBy('orden') as $ronda) {
                 $clasificaciones = Clasificacion::query()
-                    ->with('equipo:id,nombre,institucion')
+                    ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                     ->where('competencia_id', $competenciaId)
                     ->where('categoria_id', $categoria->id)
                     ->where('ronda_id', $ronda->id)
@@ -889,10 +923,10 @@ class ClasificacionConsolidacionService
     private function obtenerEvaluaciones(int $rondaId): Collection
     {
         return Resultado::query()
-            ->with(['equipo:id,nombre,institucion', 'juez:id,name,last_name'])
+            ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo', 'juez:id,name,last_name'])
             ->where('ronda_id', $rondaId)
             ->whereIn('estado', ['registrado', 'publicado'])
-            ->orderBy('equipo_id')
+            ->orderBy('inscripcion_id')
             ->orderBy('juez_user_id')
             ->get();
     }
@@ -902,7 +936,7 @@ class ClasificacionConsolidacionService
         $mecanismo = (string) ($config->mecanismo?->codigo ?? '');
 
         $filas = $evaluaciones
-            ->groupBy('equipo_id')
+            ->groupBy(fn (Resultado $resultado) => (int) ($resultado->inscripcion_id ?? 0) ?: 'equipo:' . (int) $resultado->equipo_id)
             ->map(function (Collection $items) use ($mecanismo, $config, $ronda) {
                 $promediaJueces = $this->promediaJueces($config);
                 $multiJuezSinPromedio = $this->esEvaluacionMultiJuez($config) && ! $promediaJueces;
@@ -962,7 +996,9 @@ class ClasificacionConsolidacionService
 
                 return [
                     'equipo_id' => (int) $primero->equipo_id,
+                    'inscripcion_id' => $primero->inscripcion_id ? (int) $primero->inscripcion_id : null,
                     'equipo_nombre' => (string) ($primero->equipo?->nombre ?? ''),
+                    'nombre_prototipo' => (string) ($primero->inscripcion?->nombre_prototipo ?? ''),
                     'institucion' => (string) ($primero->equipo?->institucion ?? ''),
                     'puntaje_total' => $puntajeTotal ?? 0,
                     'tiempo_total' => $tiempoTotal ?: null,
@@ -987,6 +1023,8 @@ class ClasificacionConsolidacionService
                         'evaluaciones' => $items->map(function (Resultado $resultado) {
                             return [
                                 'resultado_id' => (int) $resultado->id,
+                                'inscripcion_id' => $resultado->inscripcion_id ? (int) $resultado->inscripcion_id : null,
+                                'equipo_id' => (int) $resultado->equipo_id,
                                 'intento_numero' => (int) ($resultado->intento_numero ?? 1),
                                 'juez_user_id' => (int) $resultado->juez_user_id,
                                 'juez_nombre' => trim(
@@ -1018,7 +1056,7 @@ class ClasificacionConsolidacionService
     private function obtenerClasificaciones(int $competenciaId, int $categoriaId, int $rondaId, ConfigCalificacion $config): array
     {
         return Clasificacion::query()
-            ->with('equipo:id,nombre,institucion')
+            ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
             ->where('competencia_id', $competenciaId)
             ->where('categoria_id', $categoriaId)
             ->where('ronda_id', $rondaId)
@@ -1027,6 +1065,7 @@ class ClasificacionConsolidacionService
             ->map(function (Clasificacion $clasificacion) use ($config) {
                 return [
                     'id' => (int) $clasificacion->id,
+                    'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
                     'posicion' => (int) $clasificacion->posicion,
                     'equipo_id' => (int) $clasificacion->equipo_id,
                     'equipo_nombre' => $this->nombreParticipanteDesdeClasificacion($clasificacion),
@@ -1171,6 +1210,11 @@ class ClasificacionConsolidacionService
             'detalle_json' => [
                 'estados_anteriores' => $estadosAnteriores,
                 'clasificacion_ids' => $clasificaciones->pluck('id')->map(fn ($id) => (int) $id)->values()->all(),
+                'inscripcion_ids' => $clasificaciones
+                    ->map(fn (Clasificacion $clasificacion) => $this->clasificacionInscripcionId($clasificacion))
+                    ->filter()
+                    ->values()
+                    ->all(),
                 'equipo_ids' => $clasificaciones->pluck('equipo_id')->map(fn ($id) => (int) $id)->values()->all(),
                 'posiciones' => $clasificaciones->pluck('posicion')->map(fn ($posicion) => (int) $posicion)->values()->all(),
             ],
@@ -1314,12 +1358,15 @@ class ClasificacionConsolidacionService
         $config = $inscripcion->categoria?->configCalificacion;
         $clasificaciones = collect();
 
-        if ($config && $inscripcion->equipo_id) {
+        if ($config && $inscripcion->id) {
             $clasificaciones = Clasificacion::query()
-                ->with(['ronda:id,nombre,orden,es_final', 'equipo:id,nombre,institucion'])
+                ->with(['ronda:id,nombre,orden,es_final', 'equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                 ->where('competencia_id', $inscripcion->competencia_id)
                 ->where('categoria_id', $inscripcion->categoria_id)
-                ->where('equipo_id', $inscripcion->equipo_id)
+                ->where(function ($query) use ($inscripcion) {
+                    $query->where('inscripcion_id', $inscripcion->id)
+                        ->orWhereRaw("detalle_json #>> '{evaluaciones,0,inscripcion_id}' = ?", [(string) $inscripcion->id]);
+                })
                 ->whereIn('estado_publicacion', ['visible', 'cerrado'])
                 ->get()
                 ->sortBy(fn (Clasificacion $clasificacion) => [
@@ -1349,7 +1396,7 @@ class ClasificacionConsolidacionService
         $evaluacionesRegistradas = Resultado::query()
             ->where('competencia_id', $inscripcion->competencia_id)
             ->where('categoria_id', $inscripcion->categoria_id)
-            ->where('equipo_id', $inscripcion->equipo_id)
+            ->where('inscripcion_id', $inscripcion->id)
             ->whereIn('estado', ['registrado', 'publicado'])
             ->exists();
 
@@ -1499,38 +1546,37 @@ class ClasificacionConsolidacionService
     private function filasIndividualesEnVivo(Ronda $ronda, Collection $clasificaciones, ConfigCalificacion $config): array
     {
         $cantidadIntentos = max(1, (int) ($ronda->cantidad_intentos ?? 1));
-        $equipoIds = $clasificaciones
-            ->pluck('equipo_id')
-            ->map(fn ($id) => (int) $id)
+        $inscripcionIds = $clasificaciones
+            ->map(fn (Clasificacion $clasificacion) => $this->clasificacionInscripcionId($clasificacion))
             ->filter()
             ->values()
             ->all();
 
-        $resultadosPorEquipoIntento = Resultado::query()
+        $resultadosPorInscripcionIntento = Resultado::query()
             ->with('juez:id,name,last_name,email')
             ->where('ronda_id', $ronda->id)
-            ->whereIn('equipo_id', $equipoIds)
+            ->whereIn('inscripcion_id', $inscripcionIds)
             ->whereIn('estado', ['registrado', 'publicado'])
-            ->orderBy('equipo_id')
+            ->orderBy('inscripcion_id')
             ->orderBy('intento_numero')
             ->get()
-            ->groupBy(fn (Resultado $resultado) => ((int) $resultado->equipo_id) . ':' . ((int) ($resultado->intento_numero ?? 1)));
+            ->groupBy(fn (Resultado $resultado) => ((int) $resultado->inscripcion_id) . ':' . ((int) ($resultado->intento_numero ?? 1)));
 
         return $clasificaciones
             ->sortBy('posicion')
-            ->map(function (Clasificacion $clasificacion) use ($config, $cantidadIntentos, $resultadosPorEquipoIntento) {
+            ->map(function (Clasificacion $clasificacion) use ($config, $cantidadIntentos, $resultadosPorInscripcionIntento) {
                 $mejorIntento = (int) ($clasificacion->detalle_json['evaluaciones'][0]['intento_numero'] ?? 1);
-                $resultadosEquipo = $resultadosPorEquipoIntento
-                    ->filter(fn ($items, string $key) => str_starts_with($key, ((int) $clasificacion->equipo_id) . ':'))
+                $resultadosInscripcion = $resultadosPorInscripcionIntento
+                    ->filter(fn ($items, string $key) => str_starts_with($key, $this->clasificacionInscripcionId($clasificacion) . ':'))
                     ->flatten(1)
                     ->values();
                 $matrizJueces = $this->promediaJueces($config)
-                    ? $this->matrizPromedioJueces($resultadosEquipo, $cantidadIntentos, $config)
+                    ? $this->matrizPromedioJueces($resultadosInscripcion, $cantidadIntentos, $config)
                     : null;
 
                 $intentos = collect(range(1, $cantidadIntentos))
-                    ->map(function (int $intento) use ($clasificacion, $config, $resultadosPorEquipoIntento, $mejorIntento) {
-                        $resultados = $resultadosPorEquipoIntento->get(((int) $clasificacion->equipo_id) . ':' . $intento, collect());
+                    ->map(function (int $intento) use ($clasificacion, $config, $resultadosPorInscripcionIntento, $mejorIntento) {
+                        $resultados = $resultadosPorInscripcionIntento->get($this->clasificacionInscripcionId($clasificacion) . ':' . $intento, collect());
 
                         return [
                             'numero' => $intento,
@@ -1553,6 +1599,7 @@ class ClasificacionConsolidacionService
 
                 return [
                     'posicion' => (int) $clasificacion->posicion,
+                    'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
                     'equipo_id' => (int) $clasificacion->equipo_id,
                     'equipo_nombre' => $this->nombreParticipanteDesdeClasificacion($clasificacion),
                     'institucion' => (string) ($clasificacion->equipo?->institucion ?? ''),
@@ -1717,6 +1764,7 @@ class ClasificacionConsolidacionService
         if (! $sorteo || $sorteo->tipo_sorteo !== 'enfrentamiento') {
             return $clasificaciones->map(fn (Clasificacion $clasificacion) => [
                 'encuentro' => (int) $clasificacion->posicion,
+                'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
                 'equipo_a' => $this->nombreParticipanteDesdeClasificacion($clasificacion),
                 'institucion_a' => (string) ($clasificacion->equipo?->institucion ?? ''),
                 'resultado_label' => $this->formatearResultadoClasificacion($clasificacion, $config),
@@ -1727,22 +1775,22 @@ class ClasificacionConsolidacionService
             ])->values()->all();
         }
 
-        $clasificacionesPorEquipo = $clasificaciones->keyBy(fn (Clasificacion $item) => (int) $item->equipo_id);
+        $clasificacionesPorInscripcion = $clasificaciones->keyBy(fn (Clasificacion $item) => $this->clasificacionInscripcionId($item));
 
         return $sorteo->detalles
             ->filter(fn ($detalle) => $detalle->estado !== 'directo')
             ->groupBy(fn ($detalle) => $detalle->grupo ?? $detalle->orden)
             ->sortKeys()
-            ->map(function ($grupoDetalles, $grupo) use ($clasificacionesPorEquipo, $config) {
+            ->map(function ($grupoDetalles, $grupo) use ($clasificacionesPorInscripcion, $config) {
                 $ordenados = $grupoDetalles->sortBy('orden')->values();
                 $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
                 $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
-                $equipoIds = $ordenados
-                    ->map(fn ($detalle) => (int) ($detalle->inscripcion?->equipo_id ?? 0))
+                $inscripcionIds = $ordenados
+                    ->map(fn ($detalle) => (int) ($detalle->inscripcion_id ?? 0))
                     ->filter()
                     ->values();
-                $clasificacion = $equipoIds
-                    ->map(fn (int $equipoId) => $clasificacionesPorEquipo->get($equipoId))
+                $clasificacion = $inscripcionIds
+                    ->map(fn (int $inscripcionId) => $clasificacionesPorInscripcion->get($inscripcionId))
                     ->filter()
                     ->first();
 
@@ -1752,6 +1800,7 @@ class ClasificacionConsolidacionService
 
                 return [
                     'encuentro' => (int) $grupo,
+                    'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
                     'equipo_a' => $this->nombrePublicoParticipante(
                         $detalleA?->inscripcion?->nombre_prototipo,
                         $detalleA?->inscripcion?->equipo?->nombre,

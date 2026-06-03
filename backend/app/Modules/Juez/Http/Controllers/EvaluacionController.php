@@ -38,7 +38,7 @@ class EvaluacionController extends Controller
     {
         $validated = $request->validate([
             'ronda_id' => ['required', 'integer', 'min:1'],
-            'equipo_id' => ['required', 'integer', 'min:1'],
+            'inscripcion_id' => ['required', 'integer', 'min:1'],
             'intento_numero' => ['nullable', 'integer', 'min:1', 'max:10'],
         ]);
 
@@ -46,7 +46,7 @@ class EvaluacionController extends Controller
             $this->service->construirFormulario(
                 $request->user(),
                 (int) $validated['ronda_id'],
-                (int) $validated['equipo_id'],
+                (int) $validated['inscripcion_id'],
                 (int) ($validated['intento_numero'] ?? 1),
                 $request->session()->getId()
             )
@@ -149,7 +149,7 @@ class EvaluacionController extends Controller
     {
         $validated = $request->validate([
             'ronda_id' => ['required', 'integer', 'min:1'],
-            'equipo_id' => ['required', 'integer', 'min:1'],
+            'inscripcion_id' => ['required', 'integer', 'min:1'],
             'payload' => ['nullable', 'array'],
         ]);
 
@@ -157,7 +157,7 @@ class EvaluacionController extends Controller
             $this->service->terminarEncuentro(
                 $request->user(),
                 (int) $validated['ronda_id'],
-                (int) $validated['equipo_id'],
+                (int) $validated['inscripcion_id'],
                 $validated['payload'] ?? [],
                 $request->session()->getId()
             )

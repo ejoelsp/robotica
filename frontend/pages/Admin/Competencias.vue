@@ -13,6 +13,7 @@ import {
   UserGroupIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorMediumDate } from "@/lib/datetime";
 
 defineOptions({ layout: AdminLayout });
 
@@ -116,11 +117,10 @@ const committeeEmailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const formatFechaRango = (inicio, fin) => {
   if (!inicio) return "Fecha por definir";
 
-  const opts = { day: "2-digit", month: "short", year: "numeric" };
-  const iStr = new Date(inicio).toLocaleDateString("es-EC", opts);
+  const iStr = formatEcuadorMediumDate(inicio, "Fecha por definir");
   if (!fin || fin === inicio) return iStr;
 
-  const fStr = new Date(fin).toLocaleDateString("es-EC", opts);
+  const fStr = formatEcuadorMediumDate(fin, "Fecha por definir");
   return `Del ${iStr} al ${fStr}`;
 };
 

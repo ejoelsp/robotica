@@ -9,6 +9,7 @@ import {
   ClockIcon,
   XMarkIcon,
 } from "@heroicons/vue/24/outline";
+import { formatEcuadorDateTime } from "@/lib/datetime";
 
 const props = defineProps({
   competenciaId: { type: [Number, null], default: null },
@@ -97,15 +98,7 @@ const visibleScopes = computed(() => {
 });
 
 function formatUpdatedAt(value) {
-  if (!value) return "Sin actualización";
-
-  return new Date(value).toLocaleString("es-EC", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+  return formatEcuadorDateTime(value, "Sin actualización");
 }
 
 function openDetail(scope, row) {
@@ -567,7 +560,7 @@ onBeforeUnmount(() => {
                 <template v-if="scope.usa_enfrentamiento">
                   <tr
                     v-for="row in scope.rows"
-                    :key="`${scope.key}-match-${row.encuentro}`"
+                    :key="`${scope.key}-match-${row.encuentro}-${row.inscripcion_id || row.equipo_a}`"
                     class="cursor-pointer hover:bg-slate-50/60"
                     @click="openDetail(scope, row)"
                   >
@@ -586,7 +579,7 @@ onBeforeUnmount(() => {
                 <template v-else-if="scope.usa_intentos">
                   <tr
                     v-for="row in scope.rows"
-                    :key="`${scope.key}-attempts-${row.posicion}-${row.equipo_id || row.equipo_nombre}`"
+                    :key="`${scope.key}-attempts-${row.posicion}-${row.inscripcion_id || row.equipo_id || row.equipo_nombre}`"
                     class="cursor-pointer hover:bg-slate-50/60"
                     @click="openDetail(scope, row)"
                   >
@@ -597,7 +590,7 @@ onBeforeUnmount(() => {
                     </td>
                     <td
                       v-for="attempt in scope.intentos_headers"
-                      :key="`${scope.key}-${row.equipo_id || row.equipo_nombre}-attempt-${attempt.numero}`"
+                      :key="`${scope.key}-${row.inscripcion_id || row.equipo_id || row.equipo_nombre}-attempt-${attempt.numero}`"
                       class="px-3 py-3 sm:px-6 sm:py-4"
                     >
                       <div
@@ -623,7 +616,7 @@ onBeforeUnmount(() => {
                 <template v-else>
                   <tr
                     v-for="row in scope.rows"
-                    :key="`${scope.key}-${row.posicion}-${row.equipo_nombre}`"
+                    :key="`${scope.key}-${row.posicion}-${row.inscripcion_id || row.equipo_nombre}`"
                     class="cursor-pointer hover:bg-slate-50/60"
                     @click="openDetail(scope, row)"
                   >
