@@ -459,6 +459,9 @@ Route::middleware('auth')->group(function () {
 
             Route::patch('/control-acceso/usuarios/{usuario}/estado', [ControlAccesoController::class, 'updateEstado'])
                 ->name('control_acceso.usuarios.estado');
+
+            Route::delete('/control-acceso/usuarios/{usuario}', [ControlAccesoController::class, 'destroy'])
+                ->name('control_acceso.usuarios.destroy');
         
     });
   

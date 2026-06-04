@@ -57,23 +57,30 @@ class ControlAccesoController extends Controller
                 'seguridad.users.updated_at',
                 'roles.nombre as rol',
             ])
-            ->map(fn ($usuario) => [
-                'id' => (int) $usuario->id,
-                'name' => (string) $usuario->name,
-                'last_name' => (string) $usuario->last_name,
-                'nombre_completo' => trim((string) $usuario->name . ' ' . (string) $usuario->last_name),
-                'email' => (string) $usuario->email,
-                'telefono' => $usuario->telefono,
-                'role_id' => (int) $usuario->role_id,
-                'rol' => (string) $usuario->rol,
-                'rol_label' => $this->roleLabel((string) $usuario->rol),
-                'estado' => (bool) $usuario->estado,
-                'must_change_password' => (bool) $usuario->must_change_password,
-                'email_verified_at' => $usuario->email_verified_at ? (string) $usuario->email_verified_at : null,
-                'created_at' => $usuario->created_at ? (string) $usuario->created_at : null,
-                'updated_at' => $usuario->updated_at ? (string) $usuario->updated_at : null,
-                'sesiones_activas' => (int) ($sessionsByUser[$usuario->id] ?? 0),
-            ]);
+            ->map(function ($usuario) use ($sessionsByUser) {
+                $deleteMeta = $this->deleteEligibilityMeta($usuario);
+
+                return [
+                    'id' => (int) $usuario->id,
+                    'name' => (string) $usuario->name,
+                    'last_name' => (string) $usuario->last_name,
+                    'nombre_completo' => trim((string) $usuario->name . ' ' . (string) $usuario->last_name),
+                    'email' => (string) $usuario->email,
+                    'telefono' => $usuario->telefono,
+                    'role_id' => (int) $usuario->role_id,
+                    'rol' => (string) $usuario->rol,
+                    'rol_label' => $this->roleLabel((string) $usuario->rol),
+                    'estado' => (bool) $usuario->estado,
+                    'must_change_password' => (bool) $usuario->must_change_password,
+                    'email_verified_at' => $usuario->email_verified_at ? (string) $usuario->email_verified_at : null,
+                    'created_at' => $usuario->created_at ? (string) $usuario->created_at : null,
+                    'updated_at' => $usuario->updated_at ? (string) $usuario->updated_at : null,
+                    'sesiones_activas' => (int) ($sessionsByUser[$usuario->id] ?? 0),
+                    'can_delete' => $deleteMeta['can_delete'],
+                    'delete_checks' => $deleteMeta['checks'],
+                    'delete_block_reason' => $deleteMeta['reason'],
+                ];
+            });
 
         $auditorias = DB::table('auditoria.auditorias as auditorias')
             ->leftJoin('seguridad.users as users', 'users.id', '=', 'auditorias.user_id')
@@ -245,6 +252,60 @@ class ControlAccesoController extends Controller
             ->setStatusCode(303);
     }
 
+    public function destroy(Request $request, User $usuario, AuditoriaService $auditoria): RedirectResponse
+    {
+        if ((int) $request->user()->id === (int) $usuario->id) {
+            return back()->withErrors([
+                'delete' => 'No puedes eliminar tu propia cuenta.',
+            ]);
+        }
+
+        $rol = DB::table('seguridad.roles')->where('id', $usuario->role_id)->value('nombre');
+
+        if (! in_array($rol, ['admin', 'juez', 'competidor'], true)) {
+            return back()->withErrors([
+                'delete' => 'Este usuario no pertenece a un rol gestionable desde Control de Acceso.',
+            ]);
+        }
+
+        $eligibility = $this->deleteEligibilityMeta($usuario->fresh());
+
+        if (! $eligibility['can_delete']) {
+            return back()->withErrors([
+                'delete' => $eligibility['reason'] ?: 'No se puede eliminar este usuario porque tiene relaciones activas en el sistema.',
+            ]);
+        }
+
+        DB::transaction(function () use ($usuario, $request, $auditoria) {
+            DB::table('seguridad.sessions')->where('user_id', $usuario->id)->delete();
+            DB::table('seguridad.user_activation_tokens')->where('user_id', $usuario->id)->delete();
+            DB::table('seguridad.password_reset_codes')->where('user_id', $usuario->id)->delete();
+            DB::table('comunicacion.notificaciones')->where('user_id', $usuario->id)->delete();
+
+            $payload = [
+                'usuario_id' => (int) $usuario->id,
+                'email' => (string) $usuario->email,
+                'rol' => (string) (DB::table('seguridad.roles')->where('id', $usuario->role_id)->value('nombre') ?? ''),
+            ];
+
+            $usuario->delete();
+
+            $auditoria->registrar(
+                accion: 'eliminar_usuario',
+                tabla: 'seguridad.users',
+                modulo: 'control_acceso',
+                descripcion: 'Eliminación permanente de usuario sin relaciones activas.',
+                payload: $payload,
+                request: $request
+            );
+        });
+
+        return redirect()
+            ->route('admin.control_acceso.index')
+            ->with('success', 'Usuario eliminado correctamente.')
+            ->setStatusCode(303);
+    }
+
     private function generarEnlaceActivacion(User $usuario): string
     {
         DB::table('seguridad.user_activation_tokens')
@@ -273,5 +334,52 @@ class ControlAccesoController extends Controller
             'competidor' => 'Competidor',
             default => Str::headline($role),
         };
+    }
+
+    private function deleteEligibilityMeta(object $usuario): array
+    {
+        $user = $usuario instanceof User
+            ? $usuario
+            : User::query()->find((int) $usuario->id);
+
+        if (! $user) {
+            return [
+                'can_delete' => false,
+                'checks' => [
+                    'inscripciones' => 0,
+                    'asignaciones_juez' => 0,
+                    'resultados_juez' => 0,
+                ],
+                'reason' => 'No se pudo validar el estado actual del usuario.',
+            ];
+        }
+
+        $checks = [
+            'inscripciones' => (int) $user->inscripcionesRegistradas()->count() + (int) $user->registrosComoIntegrante()->count(),
+            'asignaciones_juez' => (int) $user->asignacionesComoJuez()->count(),
+            'resultados_juez' => (int) $user->resultadosComoJuez()->count(),
+        ];
+
+        $motivos = [];
+
+        if ($checks['inscripciones'] > 0) {
+            $motivos[] = 'tiene inscripciones asociadas';
+        }
+
+        if ($checks['asignaciones_juez'] > 0) {
+            $motivos[] = 'tiene asignaciones de juez';
+        }
+
+        if ($checks['resultados_juez'] > 0) {
+            $motivos[] = 'tiene resultados registrados como juez';
+        }
+
+        return [
+            'can_delete' => empty($motivos),
+            'checks' => $checks,
+            'reason' => empty($motivos)
+                ? null
+                : 'No se puede eliminar este usuario porque ' . implode(', ', $motivos) . '.',
+        ];
     }
 }

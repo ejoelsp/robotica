@@ -10,6 +10,7 @@ import {
   MagnifyingGlassIcon,
   PlusIcon,
   ShieldCheckIcon,
+  TrashIcon,
   UserGroupIcon,
   UserPlusIcon,
   XCircleIcon,
@@ -27,6 +28,9 @@ const auditSearch = ref("");
 const auditStatus = ref("todos");
 const showUserModal = ref(false);
 const processingUserId = ref(null);
+const showDeleteUserModal = ref(false);
+const processingDeleteUserId = ref(null);
+const deleteUserTarget = ref(null);
 
 const usuarios = computed(() => page.props.usuarios ?? []);
 const roles = computed(() => page.props.roles ?? []);
@@ -266,6 +270,33 @@ function toggleEstado(user) {
   );
 }
 
+function openDeleteUserModal(user) {
+  if (!user?.can_delete) return;
+
+  deleteUserTarget.value = user;
+  showDeleteUserModal.value = true;
+}
+
+function closeDeleteUserModal() {
+  showDeleteUserModal.value = false;
+  deleteUserTarget.value = null;
+}
+
+function confirmDeleteUser() {
+  const user = deleteUserTarget.value;
+  if (!user) return;
+
+  processingDeleteUserId.value = user.id;
+
+  router.delete(`/admin/control-acceso/usuarios/${user.id}`, {
+    preserveScroll: true,
+    onSuccess: () => closeDeleteUserModal(),
+    onFinish: () => {
+      processingDeleteUserId.value = null;
+    },
+  });
+}
+
 function initials(user) {
   const first = user.name?.charAt(0) || "";
   const last = user.last_name?.charAt(0) || "";
@@ -311,6 +342,7 @@ function actionLabel(action) {
     crear_usuario: "Crear usuario",
     activar_usuario: "Activar usuario",
     desactivar_usuario: "Desactivar usuario",
+    eliminar_usuario: "Eliminar usuario",
   };
 
   return labels[action] || String(action || "Evento").replaceAll("_", " ");
@@ -332,6 +364,10 @@ function actionLabel(action) {
 
     <div v-if="errors.estado" class="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
       {{ errors.estado }}
+    </div>
+
+    <div v-if="errors.delete" class="mb-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+      {{ errors.delete }}
     </div>
 
     <div class="mb-6 overflow-x-auto">
@@ -454,17 +490,32 @@ function actionLabel(action) {
                   {{ formatDate(user.created_at) }}
                 </td>
                 <td class="px-5 py-4 text-right">
-                  <button
-                    type="button"
-                    class="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
-                    :disabled="processingUserId === user.id"
-                    @click="toggleEstado(user)"
-                  >
-                    <ArrowPathIcon v-if="processingUserId === user.id" class="w-4 h-4 mr-2 animate-spin" />
-                    <XCircleIcon v-else-if="user.estado" class="w-4 h-4 mr-2 text-rose-600" />
-                    <CheckCircleIcon v-else class="w-4 h-4 mr-2 text-emerald-600" />
-                    {{ user.estado ? "Desactivar" : "Activar" }}
-                  </button>
+                  <div class="flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold hover:bg-slate-50 disabled:opacity-60"
+                      :disabled="processingUserId === user.id || processingDeleteUserId === user.id"
+                      @click="toggleEstado(user)"
+                    >
+                      <ArrowPathIcon v-if="processingUserId === user.id" class="w-4 h-4 mr-2 animate-spin" />
+                      <XCircleIcon v-else-if="user.estado" class="w-4 h-4 mr-2 text-rose-600" />
+                      <CheckCircleIcon v-else class="w-4 h-4 mr-2 text-emerald-600" />
+                      {{ user.estado ? "Desactivar" : "Activar" }}
+                    </button>
+
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded-xl border px-3 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50"
+                      :class="user.can_delete ? 'border-rose-200 text-rose-700 hover:bg-rose-50' : 'border-slate-200 text-slate-400'"
+                      :disabled="!user.can_delete || processingDeleteUserId === user.id || processingUserId === user.id"
+                      :title="user.can_delete ? 'Eliminar usuario permanentemente' : (user.delete_block_reason || 'Este usuario no se puede eliminar.')"
+                      @click="openDeleteUserModal(user)"
+                    >
+                      <ArrowPathIcon v-if="processingDeleteUserId === user.id" class="w-4 h-4 mr-2 animate-spin" />
+                      <TrashIcon v-else class="w-4 h-4 mr-2" />
+                      Eliminar
+                    </button>
+                  </div>
                 </td>
               </tr>
               <tr v-if="filteredUsuarios.length === 0">
@@ -650,6 +701,95 @@ function actionLabel(action) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showDeleteUserModal" class="fixed inset-0 z-[10000]">
+        <div class="absolute inset-0 bg-slate-950/50 backdrop-blur-[1px]" @click="closeDeleteUserModal"></div>
+        <div class="relative grid min-h-full place-items-center p-4">
+          <div class="w-full max-w-xl overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl">
+            <div class="border-b border-slate-200 px-6 py-5 sm:px-7">
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-[0.24em] text-rose-500">Eliminación permanente</p>
+                  <h2 class="mt-2 text-xl font-bold text-slate-900">Eliminar usuario</h2>
+                  <p class="mt-2 text-sm leading-6 text-slate-500">
+                    Esta acción elimina la cuenta de forma permanente. Solo está disponible para usuarios sin inscripciones ni asignaciones de juez.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  class="flex h-11 w-11 items-center justify-center rounded-2xl border border-slate-200 text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                  @click="closeDeleteUserModal"
+                >
+                  <XMarkIcon class="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <div class="space-y-5 px-6 py-6 sm:px-7">
+              <div class="rounded-3xl border border-slate-200 bg-slate-50/80 p-4">
+                <div class="flex items-center gap-4">
+                  <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-base font-bold text-slate-700 ring-1 ring-slate-200">
+                    {{ deleteUserTarget ? initials(deleteUserTarget) : "U" }}
+                  </div>
+                  <div class="min-w-0">
+                    <p class="truncate text-base font-semibold text-slate-900">
+                      {{ deleteUserTarget?.nombre_completo || "Usuario sin nombre" }}
+                    </p>
+                    <p class="truncate text-sm text-slate-500">{{ deleteUserTarget?.email || "Sin correo registrado" }}</p>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                      <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="roleClass(deleteUserTarget?.rol)">
+                        {{ deleteUserTarget?.rol_label || "Rol sin definir" }}
+                      </span>
+                      <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold ring-1" :class="estadoClass(deleteUserTarget?.estado)">
+                        {{ deleteUserTarget?.estado ? "Activo" : "Inactivo" }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Inscripciones asociadas</p>
+                  <p class="mt-2 text-2xl font-bold text-slate-900">{{ deleteUserTarget?.delete_checks?.inscripciones ?? 0 }}</p>
+                  <p class="mt-1 text-sm text-slate-500">Debe ser cero para permitir la eliminación.</p>
+                </div>
+                <div class="rounded-2xl border border-slate-200 bg-white p-4">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Asignaciones de juez</p>
+                  <p class="mt-2 text-2xl font-bold text-slate-900">{{ deleteUserTarget?.delete_checks?.asignaciones_juez ?? 0 }}</p>
+                  <p class="mt-1 text-sm text-slate-500">Debe ser cero para permitir la eliminación.</p>
+                </div>
+              </div>
+
+              <div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Se eliminarán también las sesiones activas, tokens de activación y códigos de restablecimiento vinculados a esta cuenta.
+              </div>
+
+              <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 sm:w-auto"
+                  @click="closeDeleteUserModal"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex w-full items-center justify-center rounded-2xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  :disabled="processingDeleteUserId === deleteUserTarget?.id"
+                  @click="confirmDeleteUser"
+                >
+                  <ArrowPathIcon v-if="processingDeleteUserId === deleteUserTarget?.id" class="mr-2 h-4 w-4 animate-spin" />
+                  <TrashIcon v-else class="mr-2 h-4 w-4" />
+                  {{ processingDeleteUserId === deleteUserTarget?.id ? "Eliminando..." : "Eliminar usuario" }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

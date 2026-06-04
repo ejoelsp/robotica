@@ -511,12 +511,12 @@ class ReporteActaService
         $leftX = 82.0;
         $rightX = 356.0;
         $addText('Competencia: ' . $snapshot['competencia']['nombre'], $leftX, $y, 8, true);
+        $y -= 21;
+        $addText('Categoría: ' . $snapshot['categoria']['nombre'], $leftX, $y, 8, true);
         $addText('Rondas con resultados: ' . ($snapshot['resumen']['total_rondas'] ?? 0), $rightX, $y, 8, true);
         $y -= 13;
-        $addText('Categoría: ' . $snapshot['categoria']['nombre'], $leftX, $y, 8, true);
-        $addText('Total de resultados: ' . ($snapshot['resumen']['total_resultados'] ?? 0), $rightX, $y, 8);
-        $y -= 13;
         $addText('Fecha de generación: ' . $snapshot['generado_at'], $leftX, $y, 8);
+        $addText('Total de resultados: ' . ($snapshot['resumen']['total_resultados'] ?? 0), $rightX, $y, 8);
         $y -= 26;
 
         foreach ($snapshot['scopes'] ?? [] as $scope) {
@@ -583,8 +583,8 @@ class ReporteActaService
             } else {
                 $columns = [
                     ['label' => 'Posición', 'x' => self::MARGIN_X, 'w' => 58],
-                    ['label' => 'Equipo', 'x' => self::MARGIN_X + 58, 'w' => 170],
-                    ['label' => 'Institución', 'x' => self::MARGIN_X + 228, 'w' => 125],
+                    ['label' => 'Equipo', 'x' => self::MARGIN_X + 58, 'w' => 166],
+                    ['label' => 'Institución', 'x' => self::MARGIN_X + 224, 'w' => 129, 'padding' => 6],
                     ['label' => 'Resultado', 'x' => self::MARGIN_X + 353, 'w' => 158],
                 ];
                 $rows = collect($scope['rows'] ?? [])
@@ -664,19 +664,20 @@ class ReporteActaService
         $leftX = 82.0;
         $rightX = 356.0;
         $addText('Competencia: ' . $snapshot['competencia']['nombre'], $leftX, $y, 8, true);
+        $y -= 21;
+        $addText('Categoría: ' . $snapshot['categoria']['nombre'], $leftX, $y, 8, true);
         $addText('Última publicación: ' . ($this->formatearFechaHoraReporte($snapshot['resumen']['updated_at'] ?? null) ?: '-'), $rightX, $y, 8, true);
         $y -= 13;
-        $addText('Categoría: ' . $snapshot['categoria']['nombre'], $leftX, $y, 8, true);
+        $addText('Podio oficial - ' . (string) ($scope['mecanismo_nombre'] ?? 'Publicada'), $leftX, $y, 8);
         $addText('Estado: ' . (string) ($snapshot['resumen']['estado_publicacion'] ?? '-'), $rightX, $y, 8);
         $y -= 13;
-        $addText('Podio oficial - ' . (string) ($scope['mecanismo_nombre'] ?? 'Publicada'), $leftX, $y, 8);
         $addText('Fecha de generación: ' . $snapshot['generado_at'], $rightX, $y, 8);
         $y -= 28;
 
         $columns = [
             ['label' => 'Posición', 'x' => self::MARGIN_X, 'w' => 62],
-            ['label' => 'Equipo', 'x' => self::MARGIN_X + 62, 'w' => 178],
-            ['label' => 'Institución', 'x' => self::MARGIN_X + 240, 'w' => 126],
+            ['label' => 'Equipo', 'x' => self::MARGIN_X + 62, 'w' => 174],
+            ['label' => 'Institución', 'x' => self::MARGIN_X + 236, 'w' => 130, 'padding' => 6],
             ['label' => 'Resultado', 'x' => self::MARGIN_X + 366, 'w' => 145],
         ];
         $rows = collect($snapshot['podio'] ?? [])
@@ -727,8 +728,9 @@ class ReporteActaService
             $maxLines = 1;
             foreach ($columns as $index => $column) {
                 $lines = [];
+                $padding = max(4.0, (float) ($column['padding'] ?? 4.0));
                 foreach (explode("\n", (string) ($row[$index] ?? '')) as $part) {
-                    array_push($lines, ...$this->wrap($part, 7.5, (float) $column['w'] - 8));
+                    array_push($lines, ...$this->wrap($part, 7.5, max(10.0, (float) $column['w'] - ($padding * 2))));
                 }
                 $wrapped[$index] = $lines ?: [''];
                 $maxLines = max($maxLines, count($wrapped[$index]));
@@ -752,9 +754,10 @@ class ReporteActaService
                 $textY = $top - 12;
                 foreach ($lines as $line) {
                     $align = $index === 0 ? 'center' : 'left';
+                    $padding = max(4.0, (float) ($columns[$index]['padding'] ?? 4.0));
                     $x = $align === 'center'
                         ? (float) $columns[$index]['x'] + ((float) $columns[$index]['w'] / 2)
-                        : (float) $columns[$index]['x'] + 4;
+                        : (float) $columns[$index]['x'] + $padding;
                     $addText($line, $x, $textY, 7.5, false, $align);
                     $textY -= 10;
                 }
@@ -817,10 +820,9 @@ class ReporteActaService
         $y -= 48;
 
         $leftX = 82.0;
-        $rightX = 356.0;
+        $rightX = 360.0;
         $addText('Competencia: ' . $snapshot['competencia']['nombre'], $leftX, $y, 8, true);
-        $addText('Resumen', $rightX, $y, 9, true);
-        $y -= 13;
+        $y -= 21;
         $addText('Categoría: ' . $snapshot['categoria']['nombre'], $leftX, $y, 8, true);
         $addText('Total de inscripciones aprobadas: ' . $snapshot['resumen']['total_aprobados'], $rightX, $y, 8);
         $y -= 13;
@@ -834,9 +836,9 @@ class ReporteActaService
         $columns = [
             ['label' => 'N.', 'x' => self::MARGIN_X, 'w' => 28],
             ['label' => 'Equipo', 'x' => self::MARGIN_X + 28, 'w' => 92],
-            ['label' => 'Prototipo', 'x' => self::MARGIN_X + 120, 'w' => 92],
-            ['label' => 'Institución', 'x' => self::MARGIN_X + 212, 'w' => 112],
-            ['label' => 'Integrantes', 'x' => self::MARGIN_X + 324, 'w' => 187],
+            ['label' => 'Prototipo', 'x' => self::MARGIN_X + 120, 'w' => 90],
+            ['label' => 'Institución', 'x' => self::MARGIN_X + 210, 'w' => 118],
+            ['label' => 'Integrantes', 'x' => self::MARGIN_X + 328, 'w' => 183],
         ];
         $tableWidth = 511.0;
 
@@ -870,9 +872,11 @@ class ReporteActaService
             foreach ($cells as $index => $cell) {
                 $lines = [];
                 foreach (explode("\n", (string) $cell) as $part) {
-                    $innerWidth = in_array($index, [1, 2, 3], true)
-                        ? $columns[$index]['w'] - 14
-                        : $columns[$index]['w'] - 10;
+                    $innerWidth = match ($index) {
+                        3 => $columns[$index]['w'] - 18,
+                        1, 2 => $columns[$index]['w'] - 14,
+                        default => $columns[$index]['w'] - 10,
+                    };
 
                     array_push($lines, ...$this->wrap($part, 8, $innerWidth));
                 }
