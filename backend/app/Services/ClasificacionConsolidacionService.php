@@ -367,30 +367,48 @@ class ClasificacionConsolidacionService
                 ->all();
         }
 
-        $tercerLugar = $categoria->rondas
-            ->first(fn (Ronda $item) => (string) $item->tipo === 'tercer_lugar');
+        $tercerLugar = Ronda::query()
+            ->where('categoria_id', $categoria->id)
+            ->where('tipo', 'tercer_lugar')
+            ->orderByDesc('orden')
+            ->orderByDesc('id')
+            ->first();
 
-        if ($tercerLugar && count($rows) < 3) {
-            $tercero = Clasificacion::query()
+        if ($tercerLugar) {
+            $clasificacionesTercerLugar = Clasificacion::query()
                 ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                 ->where('competencia_id', $competenciaId)
                 ->where('categoria_id', $categoria->id)
                 ->where('ronda_id', $tercerLugar->id)
                 ->whereIn('estado_publicacion', ['visible', 'cerrado'])
                 ->orderBy('posicion')
-                ->first();
+                ->get();
 
-            if ($tercero && ! collect($rows)->contains(fn (array $row) => (int) ($row['inscripcion_id'] ?? 0) === $this->clasificacionInscripcionId($tercero))) {
-                $rows[] = $this->filaPodioDesdeClasificacion(
-                    $tercero,
-                    $config,
-                    3,
-                    'Ganador del encuentro por tercer lugar'
-                );
+            $filaTercero = $this->filaGanadorTercerLugarDesdeSorteo($tercerLugar, $config, $clasificacionesTercerLugar)
+                ?? ($clasificacionesTercerLugar->first()
+                    ? $this->filaPodioDesdeClasificacion(
+                        $clasificacionesTercerLugar->first(),
+                        $config,
+                        3,
+                        'Ganador del encuentro por tercer lugar'
+                    )
+                    : null);
+
+            if ($filaTercero) {
+
+                $rows = collect($rows)
+                    ->reject(fn (array $row) => (int) ($row['posicion'] ?? 0) === 3)
+                    ->values()
+                    ->all();
+
+                if (! collect($rows)->contains(fn (array $row) => (int) ($row['inscripcion_id'] ?? 0) === (int) ($filaTercero['inscripcion_id'] ?? 0))) {
+                    $rows[] = $filaTercero;
+                }
             }
         }
 
         return collect($rows)
+            ->sortBy('posicion')
             ->take(3)
             ->map(function (array $row) {
                 unset($row['equipo_id']);
@@ -399,6 +417,235 @@ class ClasificacionConsolidacionService
             })
             ->values()
             ->all();
+    }
+
+    private function filaGanadorTercerLugarDesdeSorteo(
+        Ronda $ronda,
+        ConfigCalificacion $config,
+        Collection $clasificaciones
+    ): ?array {
+        $resuelto = $this->resolverGanadorDetalleDesdeSorteo($ronda, $config);
+
+        if (! $resuelto) {
+            return null;
+        }
+
+        $ganador = $resuelto['ganador'];
+        $ladoGanador = (string) $resuelto['lado_ganador'];
+        $valores = $resuelto['valores'];
+        $clasificacion = $clasificaciones->first(
+            fn (Clasificacion $item) => $this->clasificacionInscripcionId($item) === (int) $ganador->inscripcion_id
+        );
+        $estado = (string) ($clasificacion?->estado_publicacion ?? $clasificaciones->first()?->estado_publicacion ?? 'cerrado');
+        $resultado = $this->resultadoDesdePerspectiva($valores, $ladoGanador);
+
+        return $this->filaPodioDesdeDetalleSorteo(
+            $ganador,
+            3,
+            'Tercer lugar: ' . $this->nombrePublicoParticipante(
+                $ganador->inscripcion?->nombre_prototipo,
+                $ganador->inscripcion?->equipo?->nombre,
+                'Ganador'
+            ) . ' ganó ' . $resultado,
+            $estado,
+            'Ganador del encuentro por tercer lugar'
+        );
+    }
+
+    private function resolverGanadorDetalleDesdeSorteo(Ronda $ronda, ConfigCalificacion $config): ?array
+    {
+        $sorteo = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', $ronda->id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if (! $sorteo || $sorteo->tipo_sorteo !== 'enfrentamiento') {
+            return null;
+        }
+
+        $grupo = $sorteo->detalles
+            ->filter(fn ($detalle) => $detalle->estado !== 'directo')
+            ->groupBy(fn ($detalle) => $detalle->grupo ?? $detalle->orden)
+            ->first();
+
+        if (! $grupo || $grupo->count() < 2) {
+            return null;
+        }
+
+        $ordenados = $grupo->sortBy('orden')->values();
+        $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
+        $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
+
+        if (! $detalleA?->inscripcion || ! $detalleB?->inscripcion) {
+            return null;
+        }
+
+        $resultado = Resultado::query()
+            ->where('ronda_id', $ronda->id)
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion_id,
+                (int) $detalleB->inscripcion_id,
+            ])
+            ->whereIn('estado', ['registrado', 'publicado'])
+            ->latest('updated_at')
+            ->first();
+
+        if (! $resultado) {
+            return null;
+        }
+
+        $plantilla = $this->registroTemplate($config);
+        $valores = null;
+
+        if (in_array($plantilla, ['marcador', 'tabla_enfrentamiento_criterios'], true)) {
+            $valores = $this->valoresResultadoEnfrentamiento($resultado, $config);
+        } else {
+            $resultados = Resultado::query()
+                ->where('ronda_id', $ronda->id)
+                ->whereIn('inscripcion_id', [
+                    (int) $detalleA->inscripcion_id,
+                    (int) $detalleB->inscripcion_id,
+                ])
+                ->whereIn('estado', ['registrado', 'publicado'])
+                ->get()
+                ->keyBy(fn (Resultado $item) => (int) ($item->inscripcion_id ?? 0));
+
+            $valorA = $resultados->get((int) $detalleA->inscripcion_id)?->valor_principal;
+            $valorB = $resultados->get((int) $detalleB->inscripcion_id)?->valor_principal;
+
+            if ($valorA !== null && $valorB !== null) {
+                $valores = [
+                    'a' => (float) $valorA,
+                    'b' => (float) $valorB,
+                    'label' => $this->etiquetaValorEnfrentamiento($valorA) . ' - ' . $this->etiquetaValorEnfrentamiento($valorB),
+                    'reverse_label' => $this->etiquetaValorEnfrentamiento($valorB) . ' - ' . $this->etiquetaValorEnfrentamiento($valorA),
+                ];
+            }
+        }
+
+        if (! $valores || (float) $valores['a'] === (float) $valores['b']) {
+            return null;
+        }
+
+        $menorValorGana = ! in_array($plantilla, ['marcador', 'tabla_enfrentamiento_criterios'], true)
+            && ($plantilla === 'tiempo' || (string) $config->orden_ranking === 'asc');
+        $ganaA = $menorValorGana
+            ? (float) $valores['a'] < (float) $valores['b']
+            : (float) $valores['a'] > (float) $valores['b'];
+
+        return [
+            'ganador' => $ganaA ? $detalleA : $detalleB,
+            'lado_ganador' => $ganaA ? 'A' : 'B',
+            'valores' => $valores,
+        ];
+    }
+
+    private function etiquetaValorEnfrentamiento(float|int|string $valor): string
+    {
+        if (is_numeric($valor) && (float) $valor === (float) (int) $valor) {
+            return (string) (int) $valor;
+        }
+
+        return (string) $valor;
+    }
+
+    private function ganadorClasificacionDesdeSorteo(
+        Ronda $ronda,
+        ConfigCalificacion $config,
+        Collection $clasificaciones
+    ): ?Clasificacion {
+        if ($clasificaciones->isEmpty()) {
+            return null;
+        }
+
+        $sorteo = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', $ronda->id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if (! $sorteo || $sorteo->tipo_sorteo !== 'enfrentamiento') {
+            return $clasificaciones->first();
+        }
+
+        $grupo = $sorteo->detalles
+            ->filter(fn ($detalle) => $detalle->estado !== 'directo')
+            ->groupBy(fn ($detalle) => $detalle->grupo ?? $detalle->orden)
+            ->first();
+
+        if (! $grupo || $grupo->count() < 2) {
+            return $clasificaciones->first();
+        }
+
+        $ordenados = $grupo->sortBy('orden')->values();
+        $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
+        $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
+
+        if (! $detalleA?->inscripcion || ! $detalleB?->inscripcion) {
+            return $clasificaciones->first();
+        }
+
+        $resultado = Resultado::query()
+            ->where('ronda_id', $ronda->id)
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion_id,
+                (int) $detalleB->inscripcion_id,
+            ])
+            ->whereIn('estado', ['registrado', 'publicado'])
+            ->latest('updated_at')
+            ->first();
+
+        if (! $resultado) {
+            return $clasificaciones->first();
+        }
+
+        $plantilla = $this->registroTemplate($config);
+
+        if ($plantilla === 'marcador') {
+            $payload = is_array($resultado->payload_json) ? $resultado->payload_json : [];
+
+            if (! isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])) {
+                return $clasificaciones->first();
+            }
+
+            $valorA = (float) $payload['marcador_equipo_a'];
+            $valorB = (float) $payload['marcador_equipo_b'];
+        } elseif ($plantilla === 'tabla_enfrentamiento_criterios') {
+            $payload = is_array($resultado->payload_json) ? $resultado->payload_json : [];
+            [$valorA, $valorB] = $this->totalesTablaEnfrentamiento($payload, $config);
+            $valorA = (float) $valorA;
+            $valorB = (float) $valorB;
+        } else {
+            $resultados = Resultado::query()
+                ->where('ronda_id', $ronda->id)
+                ->whereIn('inscripcion_id', [
+                    (int) $detalleA->inscripcion_id,
+                    (int) $detalleB->inscripcion_id,
+                ])
+                ->whereIn('estado', ['registrado', 'publicado'])
+                ->get()
+                ->keyBy(fn (Resultado $item) => (int) ($item->inscripcion_id ?? 0));
+
+            $valorA = $resultados->get((int) $detalleA->inscripcion_id)?->valor_principal;
+            $valorB = $resultados->get((int) $detalleB->inscripcion_id)?->valor_principal;
+        }
+
+        if ($valorA === null || $valorB === null || (float) $valorA === (float) $valorB) {
+            return $clasificaciones->first();
+        }
+
+        $menorValorGana = ! in_array($plantilla, ['marcador', 'tabla_enfrentamiento_criterios'], true)
+            && ($plantilla === 'tiempo' || (string) $config->orden_ranking === 'asc');
+        $ganaA = $menorValorGana
+            ? (float) $valorA < (float) $valorB
+            : (float) $valorA > (float) $valorB;
+
+        $ganadorInscripcionId = (int) ($ganaA ? $detalleA->inscripcion_id : $detalleB->inscripcion_id);
+
+        return $clasificaciones->first(
+            fn (Clasificacion $clasificacion) => $this->clasificacionInscripcionId($clasificacion) === $ganadorInscripcionId
+        ) ?? $clasificaciones->first();
     }
 
     private function podioFinalDesdeSorteo(Ronda $final, ConfigCalificacion $config, Collection $clasificacionesFinal): array

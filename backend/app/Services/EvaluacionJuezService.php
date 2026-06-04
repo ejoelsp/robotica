@@ -1004,11 +1004,12 @@ class EvaluacionJuezService
         if ($cantidadSiguiente === 2 && $directos->isEmpty() && $resueltos->count() === 2) {
             $perdedoresSemifinal = $resueltos->pluck('perdedor')->filter()->values();
 
-            $final = $this->prepararRondaAutomaticaEnfrentamiento($ronda, 'final', $participantesSiguiente, true);
-            $tercerLugar = $this->prepararRondaAutomaticaEnfrentamiento($ronda, 'tercer_lugar', $perdedoresSemifinal, false);
+            $siguienteOrden = $this->siguienteOrdenRondaCategoria((int) $ronda->categoria_id);
+            $tercerLugar = $this->prepararRondaAutomaticaEnfrentamiento($ronda, 'tercer_lugar', $perdedoresSemifinal, false, $siguienteOrden);
+            $final = $this->prepararRondaAutomaticaEnfrentamiento($ronda, 'final', $participantesSiguiente, true, $siguienteOrden + 1);
 
-            $this->generarSorteoSeguro($juez, $final);
             $this->generarSorteoSeguro($juez, $tercerLugar);
+            $this->generarSorteoSeguro($juez, $final);
 
             return;
         }
@@ -1027,7 +1028,8 @@ class EvaluacionJuezService
         Ronda $origen,
         string $tipo,
         $inscripciones,
-        bool $esFinal
+        bool $esFinal,
+        ?int $ordenDeseado = null
     ): Ronda {
         $inscripciones = collect($inscripciones)
             ->filter(fn (?Inscripcion $inscripcion) => $this->inscripcionAprobada($inscripcion))
@@ -1041,11 +1043,12 @@ class EvaluacionJuezService
             ->first();
 
         if (! $ronda) {
+            $ordenRonda = $ordenDeseado ?? $this->siguienteOrdenRondaCategoria((int) $origen->categoria_id);
             $ronda = Ronda::create([
                 'categoria_id' => $origen->categoria_id,
-                'nombre' => $this->nombreRondaAutomaticaEnfrentamiento($tipo, $inscripciones->count(), (int) $origen->orden + 1),
+                'nombre' => $this->nombreRondaAutomaticaEnfrentamiento($tipo, $inscripciones->count(), $ordenRonda),
                 'tipo' => $tipo,
-                'orden' => $this->siguienteOrdenRondaCategoria((int) $origen->categoria_id),
+                'orden' => $ordenRonda,
                 'cantidad_intentos' => 1,
                 'intentos_consecutivos' => false,
                 'clasifican_cantidad' => null,
@@ -1055,11 +1058,17 @@ class EvaluacionJuezService
                 'estado' => 'activa',
             ]);
         } else {
-            $ronda->update([
-                'nombre' => $this->nombreRondaAutomaticaEnfrentamiento($tipo, $inscripciones->count(), (int) $ronda->orden),
+            $payload = [
+                'nombre' => $this->nombreRondaAutomaticaEnfrentamiento($tipo, $inscripciones->count(), (int) ($ordenDeseado ?? $ronda->orden)),
                 'es_final' => $esFinal,
                 'estado' => 'activa',
-            ]);
+            ];
+
+            if ($ordenDeseado !== null) {
+                $payload['orden'] = $ordenDeseado;
+            }
+
+            $ronda->update($payload);
         }
 
         DB::transaction(function () use ($ronda, $inscripciones, $origen) {
@@ -1409,46 +1418,136 @@ class EvaluacionJuezService
             return $clasificaciones->first();
         }
 
-        $ordenados = $grupo->sortBy('orden')->values();
-        $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
-        $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
+        $resuelto = $this->resolverGanadorGrupoEnfrentamiento($sorteo, $grupo, $config);
 
-        if (! $detalleA?->inscripcion || ! $detalleB?->inscripcion) {
+        if (! $resuelto || ! ($resuelto['ganador'] ?? null)) {
             return $clasificaciones->first();
         }
 
-        $resultado = Resultado::query()
-            ->where('ronda_id', $ronda->id)
-            ->whereIn('inscripcion_id', [
-                (int) $detalleA->inscripcion_id,
-                (int) $detalleB->inscripcion_id,
-            ])
-            ->whereIn('estado', ['registrado', 'publicado'])
-            ->latest('updated_at')
-            ->first();
+        $ganadorInscripcionId = (int) ($resuelto['ganador']->id ?? 0);
 
-        if (! $resultado) {
+        if ($ganadorInscripcionId <= 0) {
             return $clasificaciones->first();
         }
-
-        $valores = $this->valoresResultadoEnfrentamiento($resultado, $config);
-
-        if (! $valores || (float) $valores['a'] === (float) $valores['b']) {
-            return $clasificaciones->first();
-        }
-
-        $menorValorGana = ! in_array($this->registroTemplate($config), ['marcador', 'tabla_enfrentamiento_criterios'], true)
-            && ($this->registroTemplate($config) === 'tiempo' || (string) $config->orden_ranking === 'asc');
-
-        $ganaA = $menorValorGana
-            ? (float) $valores['a'] < (float) $valores['b']
-            : (float) $valores['a'] > (float) $valores['b'];
-
-        $ganadorInscripcionId = (int) ($ganaA ? $detalleA->inscripcion_id : $detalleB->inscripcion_id);
 
         return $clasificaciones->first(
             fn (Clasificacion $clasificacion) => $this->clasificacionInscripcionId($clasificacion) === $ganadorInscripcionId
         ) ?? $clasificaciones->first();
+    }
+
+    private function valoresResultadoEnfrentamiento(Resultado $resultado, ConfigCalificacion $config): ?array
+    {
+        $payload = is_array($resultado->payload_json) ? $resultado->payload_json : [];
+        $plantilla = $this->plantillaRegistroEnfrentamiento($config);
+
+        if ($plantilla === 'marcador') {
+            if (! isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])) {
+                return null;
+            }
+
+            $valorA = (float) $payload['marcador_equipo_a'];
+            $valorB = (float) $payload['marcador_equipo_b'];
+
+            return [
+                'a' => $valorA,
+                'b' => $valorB,
+                'label' => (int) $valorA . ' - ' . (int) $valorB,
+                'reverse_label' => (int) $valorB . ' - ' . (int) $valorA,
+            ];
+        }
+
+        if ($plantilla === 'tabla_enfrentamiento_criterios') {
+            [$valorA, $valorB] = $this->totalesTablaEnfrentamientoEvaluacion($payload, $config);
+
+            return [
+                'a' => (float) $valorA,
+                'b' => (float) $valorB,
+                'label' => $valorA . ' - ' . $valorB,
+                'reverse_label' => $valorB . ' - ' . $valorA,
+            ];
+        }
+
+        $valorA = $resultado->valor_principal;
+        $valorB = $resultado->valor_secundario;
+
+        if ($valorA === null || $valorB === null) {
+            return null;
+        }
+
+        return [
+            'a' => (float) $valorA,
+            'b' => (float) $valorB,
+            'label' => $this->normalizarEtiquetaResultado($valorA) . ' - ' . $this->normalizarEtiquetaResultado($valorB),
+            'reverse_label' => $this->normalizarEtiquetaResultado($valorB) . ' - ' . $this->normalizarEtiquetaResultado($valorA),
+        ];
+    }
+
+    private function plantillaRegistroEnfrentamiento(ConfigCalificacion $config): ?string
+    {
+        $registro = $config->reglas_json['registro'] ?? [];
+
+        if (is_array($registro) && ($registro['plantilla_resultado'] ?? null)) {
+            return (string) $registro['plantilla_resultado'];
+        }
+
+        $campos = collect($config->campos_json ?? []);
+
+        if ($campos->contains(fn ($campo) => ($campo['key'] ?? null) === 'tiempo' && ($campo['type'] ?? null) === 'duration')) {
+            return 'tiempo';
+        }
+
+        if ($campos->contains(fn ($campo) => ($campo['key'] ?? null) === 'marcador_equipo_a')) {
+            return 'marcador';
+        }
+
+        if (($config->mecanismo?->codigo ?? null) === 'registro_resultado') {
+            return 'tiempo';
+        }
+
+        return null;
+    }
+
+    private function totalesTablaEnfrentamientoEvaluacion(array $payload, ConfigCalificacion $config): array
+    {
+        $totalA = 0;
+        $totalB = 0;
+
+        foreach ($config->campos_json ?? [] as $campo) {
+            if (($campo['type'] ?? null) !== 'number') {
+                continue;
+            }
+
+            $unitario = (float) ($campo['valor_unitario'] ?? 0);
+            $factor = ($campo['es_penalizacion'] ?? false) ? -1 : 1;
+            $key = (string) ($campo['key'] ?? '');
+
+            $totalA += ((float) ($payload["{$key}_a"] ?? 0)) * $unitario * $factor;
+            $totalB += ((float) ($payload["{$key}_b"] ?? 0)) * $unitario * $factor;
+        }
+
+        return [(int) $totalA, (int) $totalB];
+    }
+
+    private function normalizarEtiquetaResultado(float|int|string $valor): string
+    {
+        if (is_numeric($valor) && (float) $valor === (float) (int) $valor) {
+            return (string) (int) $valor;
+        }
+
+        return (string) $valor;
+    }
+
+    private function clasificacionInscripcionId(Clasificacion $clasificacion): int
+    {
+        $inscripcionId = (int) ($clasificacion->inscripcion_id ?? 0);
+
+        if ($inscripcionId > 0) {
+            return $inscripcionId;
+        }
+
+        $evaluacion = $clasificacion->detalle_json['evaluaciones'][0] ?? [];
+
+        return (int) ($evaluacion['inscripcion_id'] ?? 0);
     }
 
     private function actualizarMetadataRondaEnfrentamiento(Ronda $ronda, int $participantes): void
