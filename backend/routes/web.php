@@ -432,6 +432,9 @@ Route::middleware('auth')->group(function () {
             Route::post('/certificados', [AdminCertificadoController::class, 'store'])
                 ->name('certificados.store');
 
+            Route::get('/certificados/emergencia/descargar', [AdminCertificadoController::class, 'downloadManual'])
+                ->name('certificados.emergencia.download');
+
             Route::patch('/certificados/{plantilla}', [AdminCertificadoController::class, 'update'])
                 ->name('certificados.update');
 

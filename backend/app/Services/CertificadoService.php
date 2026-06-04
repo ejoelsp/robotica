@@ -7,7 +7,6 @@ use App\Models\Clasificacion;
 use App\Models\Inscripcion;
 use App\Models\InscripcionIntegrante;
 use App\Models\PlantillaCertificado;
-use App\Models\RondaParticipante;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
@@ -74,18 +73,16 @@ class CertificadoService
         return $this->generarParaIntegrantePorTipo($integranteId, $userId, null);
     }
 
+    public function generarParaIntegranteComoAdminPorTipo(int $integranteId, ?string $tipoSolicitado = null): CertificadoGenerado
+    {
+        [$integrante, $inscripcion] = $this->resolverIntegranteEInscripcion($integranteId);
+
+        return $this->generarCertificadoManual($integrante, $inscripcion, $tipoSolicitado);
+    }
+
     public function generarParaIntegrantePorTipo(int $integranteId, int $userId, ?string $tipoSolicitado = null): CertificadoGenerado
     {
-        $integrante = InscripcionIntegrante::query()
-            ->with([
-                'inscripcion.competencia:id,nombre,fecha_inicio',
-                'inscripcion.categoria:id,nombre',
-                'inscripcion.equipo:id,nombre,institucion',
-                'inscripcion.integrantes:id,inscripcion_id,nombre_completo,user_id,es_capitan',
-            ])
-            ->findOrFail($integranteId);
-
-        $inscripcion = $integrante->inscripcion;
+        [$integrante, $inscripcion] = $this->resolverIntegranteEInscripcion($integranteId);
 
         abort_unless(
             $inscripcion
@@ -93,9 +90,16 @@ class CertificadoService
             403
         );
 
+        return $this->generarCertificado($integrante, $inscripcion, $tipoSolicitado);
+    }
+
+    private function generarCertificado(
+        InscripcionIntegrante $integrante,
+        Inscripcion $inscripcion,
+        ?string $tipoSolicitado = null
+    ): CertificadoGenerado {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
-        $excluido = $this->inscripcionExcluida($inscripcion);
-        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $excluido);
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion);
 
         if ($tiposDisponibles === []) {
             throw ValidationException::withMessages([
@@ -153,6 +157,83 @@ class CertificadoService
         );
     }
 
+    private function generarCertificadoManual(
+        InscripcionIntegrante $integrante,
+        Inscripcion $inscripcion,
+        ?string $tipoSolicitado = null
+    ): CertificadoGenerado {
+        $tipo = $tipoSolicitado ?: 'participacion';
+
+        if (! array_key_exists($tipo, $this->tiposCertificados())) {
+            throw ValidationException::withMessages([
+                'tipo_certificado' => 'El tipo de certificado seleccionado no es válido.',
+            ]);
+        }
+
+        $plantilla = $this->plantillaActiva($inscripcion, $tipo);
+
+        if (! $plantilla) {
+            throw ValidationException::withMessages([
+                'plantilla' => 'No existe una plantilla activa para este tipo de certificado.',
+            ]);
+        }
+
+        $datos = $this->datosCertificado($inscripcion, $integrante, $tipo);
+        $pdf = $this->construirPdf(
+            Storage::disk('public')->path($plantilla->archivo_plantilla),
+            $datos,
+            $plantilla->configuracion_textos ?: $this->configuracionDefault()
+        );
+
+        $rutaPdf = sprintf(
+            'certificados/generados/%s/%s/%s.pdf',
+            $inscripcion->competencia_id,
+            $inscripcion->categoria_id,
+            $this->nombreArchivo($integrante->nombre_completo . '-' . $tipo . '-' . $plantilla->id)
+        );
+
+        Storage::disk('public')->put($rutaPdf, $pdf);
+
+        return CertificadoGenerado::query()->updateOrCreate(
+            [
+                'inscripcion_integrante_id' => $integrante->id,
+                'plantilla_certificado_id' => $plantilla->id,
+            ],
+            [
+                'competencia_id' => $inscripcion->competencia_id,
+                'categoria_id' => $inscripcion->categoria_id,
+                'equipo_id' => $inscripcion->equipo_id,
+                'inscripcion_id' => $inscripcion->id,
+                'tipo_certificado' => $tipo,
+                'archivo_pdf' => $rutaPdf,
+                'datos_json' => $datos,
+                'fecha_generacion' => now(),
+            ]
+        );
+    }
+
+    private function resolverIntegranteEInscripcion(int $integranteId): array
+    {
+        $integrante = InscripcionIntegrante::query()
+            ->with([
+                'inscripcion.competencia:id,nombre,fecha_inicio',
+                'inscripcion.categoria:id,nombre',
+                'inscripcion.equipo:id,nombre,institucion',
+                'inscripcion.integrantes:id,inscripcion_id,nombre_completo,user_id,es_capitan',
+            ])
+            ->findOrFail($integranteId);
+
+        $inscripcion = $integrante->inscripcion;
+
+        if (! $inscripcion || ! Inscripcion::query()->whereKey($inscripcion->id)->aprobadas()->exists()) {
+            throw ValidationException::withMessages([
+                'inscripcion_integrante_id' => 'Solo se pueden generar certificados para inscripciones aprobadas.',
+            ]);
+        }
+
+        return [$integrante, $inscripcion];
+    }
+
     public function construirPdfDesdePlantilla(PlantillaCertificado $plantilla): string
     {
         $datos = [
@@ -175,8 +256,7 @@ class CertificadoService
     private function serializarCertificadosInscripcion(Inscripcion $inscripcion)
     {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
-        $excluido = $this->inscripcionExcluida($inscripcion);
-        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $excluido);
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion);
 
         return $inscripcion->integrantes
             ->sortByDesc(fn (InscripcionIntegrante $integrante) => (bool) $integrante->es_capitan)
@@ -217,7 +297,15 @@ class CertificadoService
             ->where('categoria_id', $inscripcion->categoria_id)
             ->where(function ($query) use ($inscripcion) {
                 $query->where('inscripcion_id', $inscripcion->id)
-                    ->orWhereRaw("detalle_json #>> '{evaluaciones,0,inscripcion_id}' = ?", [(string) $inscripcion->id]);
+                    ->orWhere('equipo_id', $inscripcion->equipo_id)
+                    ->orWhereRaw(
+                        "EXISTS (
+                            SELECT 1
+                            FROM jsonb_array_elements(COALESCE(resultados.clasificaciones.detalle_json->'evaluaciones', '[]'::jsonb)) AS evaluacion
+                            WHERE NULLIF(evaluacion->>'inscripcion_id', '')::bigint = ?
+                        )",
+                        [(string) $inscripcion->id]
+                    );
             })
             ->whereIn('estado_publicacion', ['visible', 'cerrado'])
             ->get()
@@ -245,7 +333,7 @@ class CertificadoService
         };
     }
 
-    private function tiposDisponiblesParaInscripcion(?Clasificacion $clasificacion, bool $excluido): array
+    private function tiposDisponiblesParaInscripcion(?Clasificacion $clasificacion): array
     {
         $tipos = ['participacion'];
 
@@ -255,10 +343,6 @@ class CertificadoService
             if ($tipoPodio) {
                 $tipos[] = $tipoPodio;
             }
-        }
-
-        if ($excluido) {
-            return array_values(array_unique($tipos));
         }
 
         return array_values(array_unique($tipos));
@@ -315,14 +399,6 @@ class CertificadoService
         }
 
         return 1;
-    }
-
-    private function inscripcionExcluida(Inscripcion $inscripcion): bool
-    {
-        return RondaParticipante::query()
-            ->where('inscripcion_id', $inscripcion->id)
-            ->where('estado', 'excluido')
-            ->exists();
     }
 
     private function plantillaActiva(Inscripcion $inscripcion, string $tipo): ?PlantillaCertificado

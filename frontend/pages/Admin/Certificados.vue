@@ -26,6 +26,10 @@ const props = defineProps({
     type: Number,
     default: null,
   },
+  activeTab: {
+    type: String,
+    default: "plantillas",
+  },
   competencias: {
     type: Array,
     default: () => [],
@@ -42,14 +46,33 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  emergenciaCategorias: {
+    type: Array,
+    default: () => [],
+  },
+  emergenciaParticipantes: {
+    type: Array,
+    default: () => [],
+  },
 });
 
 const page = usePage();
+const tabs = [
+  { id: "plantillas", label: "Configurar plantillas" },
+  { id: "manual", label: "Generación manual" },
+];
+const activeTab = ref(
+  tabs.some((tab) => tab.id === props.activeTab) ? props.activeTab : "plantillas"
+);
 const selectedCompetition = ref(props.competenciaId || "");
 const selectedField = ref("participante");
 const fieldsDropdownOpen = ref(false);
 const imagePreviewUrl = ref("");
 const editingTemplate = ref(null);
+const selectedManualCategoryId = ref(props.emergenciaCategorias[0]?.id || "");
+const selectedManualParticipantId = ref("");
+const selectedManualCertificateType = ref("participacion");
+const manualSearch = ref("");
 const deleteModal = ref({
   open: false,
   plantilla: null,
@@ -104,6 +127,60 @@ const camposConfig = reactive(normalizeConfig(props.configuracionDefault));
 const selectedCompetitionData = computed(() =>
   props.competencias.find((item) => Number(item.id) === Number(selectedCompetition.value))
 );
+const tiposConPlantillaActiva = computed(
+  () => new Set(props.plantillas.filter((item) => item.activo).map((item) => item.tipo_certificado))
+);
+const manualCategories = computed(() => props.emergenciaCategorias || []);
+const manualParticipants = computed(() => props.emergenciaParticipantes || []);
+const filteredManualParticipants = computed(() => {
+  const categoryId = Number(selectedManualCategoryId.value || 0);
+  const term = manualSearch.value.trim().toLowerCase();
+
+  return manualParticipants.value.filter((item) => {
+    if (categoryId > 0 && Number(item.categoria_id) !== categoryId) {
+      return false;
+    }
+
+    if (!term) {
+      return true;
+    }
+
+    return [
+      item.participante,
+      item.equipo,
+      item.prototipo,
+      item.institucion,
+      item.categoria,
+    ]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(term));
+  });
+});
+const selectedManualParticipant = computed(() =>
+  filteredManualParticipants.value.find(
+    (item) => Number(item.integrante_id) === Number(selectedManualParticipantId.value)
+  ) || null
+);
+const manualTypeOptions = computed(() =>
+  Object.entries(props.tiposCertificados || {}).map(([value, label]) => ({
+    value,
+    label,
+    available: tiposConPlantillaActiva.value.has(value),
+  }))
+);
+const manualDownloadUrl = computed(() => {
+  if (!selectedManualParticipant.value || !tiposConPlantillaActiva.value.has(selectedManualCertificateType.value)) {
+    return "";
+  }
+
+  const params = new URLSearchParams({
+    competencia_id: String(selectedCompetition.value || ""),
+    integrante_id: String(selectedManualParticipant.value.integrante_id),
+    tipo_certificado: String(selectedManualCertificateType.value),
+  });
+
+  return `/admin/certificados/emergencia/descargar?${params.toString()}`;
+});
 
 const selectedConfig = computed(() => camposConfig[selectedField.value] ?? {});
 const campos = computed(() =>
@@ -131,10 +208,55 @@ watch(selectedCompetition, (value) => {
 
   router.get(
     "/admin/certificados",
-    { competencia_id: value },
+    { competencia_id: value, tab: activeTab.value },
     { preserveScroll: true, preserveState: true, replace: true }
   );
 });
+
+watch(
+  () => props.emergenciaCategorias,
+  (categories) => {
+    const current = Number(selectedManualCategoryId.value || 0);
+    const exists = (categories || []).some((item) => Number(item.id) === current);
+    selectedManualCategoryId.value = exists ? current : categories?.[0]?.id || "";
+  },
+  { immediate: true }
+);
+
+watch(selectedManualCategoryId, () => {
+  const current = Number(selectedManualParticipantId.value || 0);
+  const exists = filteredManualParticipants.value.some((item) => Number(item.integrante_id) === current);
+
+  if (!exists) {
+    selectedManualParticipantId.value = filteredManualParticipants.value[0]?.integrante_id || "";
+  }
+});
+
+watch(
+  filteredManualParticipants,
+  (items) => {
+    const current = Number(selectedManualParticipantId.value || 0);
+    const exists = items.some((item) => Number(item.integrante_id) === current);
+
+    if (!exists) {
+      selectedManualParticipantId.value = items[0]?.integrante_id || "";
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  manualTypeOptions,
+  (options) => {
+    const current = selectedManualCertificateType.value;
+    const exists = options.some((item) => item.value === current && item.available);
+
+    if (!exists) {
+      selectedManualCertificateType.value = options.find((item) => item.available)?.value || "participacion";
+    }
+  },
+  { immediate: true }
+);
 
 watch(
   camposConfig,
@@ -250,6 +372,23 @@ function submit() {
       clearImagePreview();
     },
   });
+}
+
+function switchTab(tabId) {
+  activeTab.value = tabId;
+
+  if (typeof window !== "undefined") {
+    const url = new URL(window.location.href);
+    url.searchParams.set("competencia_id", String(selectedCompetition.value || ""));
+    url.searchParams.set("tab", tabId);
+    window.history.replaceState({}, "", url.toString());
+  }
+}
+
+function handleManualDownloadClick(event) {
+  if (!manualDownloadUrl.value) {
+    event.preventDefault();
+  }
 }
 
 function editPlantilla(plantilla) {
@@ -388,7 +527,22 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="grid gap-6 xl:grid-cols-[390px_1fr]">
+    <section class="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+      <div class="grid gap-2 sm:grid-cols-2">
+        <button
+          v-for="tab in tabs"
+          :key="tab.id"
+          type="button"
+          class="rounded-xl px-4 py-3 text-sm font-bold transition"
+          :class="activeTab === tab.id ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'"
+          @click="switchTab(tab.id)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="activeTab === 'plantillas'" class="grid gap-6 xl:grid-cols-[390px_1fr]">
       <form class="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" @submit.prevent="submit">
         <div class="flex items-center gap-3">
           <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
@@ -665,6 +819,156 @@ onBeforeUnmount(() => {
             <div v-if="!plantillas.length" class="px-5 py-12 text-center text-slate-500">
               No hay plantillas registradas para la competencia seleccionada.
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-else class="grid gap-6 xl:grid-cols-[360px_1fr]">
+      <div class="space-y-6">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div class="flex items-start gap-3">
+            <div class="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50">
+              <ArrowDownTrayIcon class="h-6 w-6 text-amber-600" />
+            </div>
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Generación manual</h2>
+              <p class="mt-1 text-sm text-slate-500">
+                Selecciona la categoría, el integrante y el tipo de certificado para descargarlo al instante.
+              </p>
+            </div>
+          </div>
+
+          <div
+            v-if="page.props.errors?.integrante_id || page.props.errors?.tipo_certificado || page.props.errors?.inscripcion_integrante_id || page.props.errors?.plantilla"
+            class="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+          >
+            {{ page.props.errors?.integrante_id || page.props.errors?.tipo_certificado || page.props.errors?.inscripcion_integrante_id || page.props.errors?.plantilla }}
+          </div>
+
+          <div
+            v-if="!manualCategories.length"
+            class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+          >
+            No existen inscripciones aprobadas en esta competencia para generar certificados manuales.
+          </div>
+
+          <div v-else class="mt-5 space-y-4">
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-800">Categoría</label>
+              <select
+                v-model="selectedManualCategoryId"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option v-for="categoria in manualCategories" :key="categoria.id" :value="categoria.id">
+                  {{ categoria.nombre }} · {{ categoria.integrantes_count }} integrantes
+                </option>
+              </select>
+            </div>
+
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-800">Buscar integrante o equipo</label>
+              <input
+                v-model="manualSearch"
+                type="text"
+                placeholder="Escribe el nombre del integrante, equipo o prototipo"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div>
+              <label class="mb-1 block text-sm font-semibold text-slate-800">Tipo de certificado</label>
+              <select
+                v-model="selectedManualCertificateType"
+                class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option
+                  v-for="option in manualTypeOptions"
+                  :key="option.value"
+                  :value="option.value"
+                  :disabled="!option.available"
+                >
+                  {{ option.label }}{{ option.available ? "" : " · sin plantilla activa" }}
+                </option>
+              </select>
+              <p v-if="!tiposConPlantillaActiva.has(selectedManualCertificateType)" class="mt-1 text-xs text-amber-700">
+                Primero activa una plantilla para este tipo de certificado.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div v-if="selectedManualParticipant" class="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm sm:p-5">
+          <p class="text-xs font-bold uppercase tracking-[0.18em] text-blue-700">Integrante seleccionado</p>
+          <h3 class="mt-2 text-lg font-bold text-slate-900">{{ selectedManualParticipant.participante }}</h3>
+          <p class="mt-1 text-sm text-slate-600">
+            {{ selectedManualParticipant.equipo }} · {{ selectedManualParticipant.categoria }}
+          </p>
+          <p class="mt-1 text-sm text-slate-500">
+            {{ selectedManualParticipant.prototipo }} · {{ selectedManualParticipant.institucion || "Sin institución" }}
+          </p>
+
+          <a
+            :href="manualDownloadUrl || undefined"
+            class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition sm:w-auto"
+            :class="manualDownloadUrl ? 'bg-blue-600 text-white hover:bg-blue-700' : 'cursor-not-allowed bg-slate-200 text-slate-500'"
+            :aria-disabled="!manualDownloadUrl"
+            @click="handleManualDownloadClick"
+          >
+            <ArrowDownTrayIcon class="h-5 w-5" />
+            Descargar certificado
+          </a>
+        </div>
+      </div>
+
+      <div class="space-y-6">
+        <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 class="text-lg font-bold text-slate-900">Participantes aprobados</h2>
+              <p class="text-sm text-slate-500">
+                El selector usa únicamente inscripciones aprobadas con sus integrantes registrados.
+              </p>
+            </div>
+            <span class="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+              {{ filteredManualParticipants.length }} disponibles
+            </span>
+          </div>
+
+          <div
+            v-if="!filteredManualParticipants.length"
+            class="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500"
+          >
+            No hay integrantes que coincidan con la categoría o la búsqueda actual.
+          </div>
+
+          <div v-else class="mt-4 grid gap-3 md:grid-cols-2">
+            <button
+              v-for="item in filteredManualParticipants"
+              :key="item.integrante_id"
+              type="button"
+              class="rounded-2xl border p-4 text-left transition"
+              :class="Number(selectedManualParticipantId) === Number(item.integrante_id)
+                ? 'border-blue-500 bg-blue-50 shadow-sm'
+                : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-slate-50'"
+              @click="selectedManualParticipantId = item.integrante_id"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="truncate text-base font-bold text-slate-900">{{ item.participante }}</p>
+                  <p class="mt-1 text-sm font-semibold text-blue-700">{{ item.equipo }}</p>
+                </div>
+                <span
+                  v-if="item.es_capitan"
+                  class="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700"
+                >
+                  Capitán
+                </span>
+              </div>
+              <p class="mt-2 text-sm text-slate-600">{{ item.categoria }}</p>
+              <p class="mt-1 text-sm text-slate-500">{{ item.prototipo }}</p>
+              <p class="mt-1 text-sm text-slate-500">{{ item.institucion || "Sin institución" }}</p>
+            </button>
           </div>
         </div>
       </div>

@@ -3,6 +3,7 @@
 namespace App\Modules\Admin\Certificados\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Inscripcion;
 use App\Models\PlantillaCertificado;
 use App\Services\CertificadoService;
 use Illuminate\Http\Request;
@@ -14,6 +15,8 @@ use Inertia\Response;
 
 class CertificadoController extends Controller
 {
+    private const CERTIFICADOS_TABS = ['plantillas', 'manual'];
+
     public function __construct(
         private readonly CertificadoService $service
     ) {
@@ -60,12 +63,72 @@ class CertificadoController extends Controller
                 'delete_url' => route('admin.certificados.destroy', $plantilla),
             ]);
 
+        $emergenciaInscripciones = Inscripcion::query()
+            ->with([
+                'categoria:id,nombre',
+                'equipo:id,nombre,institucion',
+                'integrantes:id,inscripcion_id,nombre_completo,user_id,es_capitan',
+            ])
+            ->where('competencia_id', $competenciaId)
+            ->aprobadas()
+            ->orderByDesc('id')
+            ->get();
+
+        $emergenciaCategorias = $emergenciaInscripciones
+            ->groupBy('categoria_id')
+            ->map(function ($inscripciones, $categoriaId) {
+                $primera = $inscripciones->first();
+
+                return [
+                    'id' => (int) $categoriaId,
+                    'nombre' => (string) ($primera?->categoria?->nombre ?? 'Categoría'),
+                    'equipos_count' => $inscripciones->count(),
+                    'integrantes_count' => $inscripciones->sum(
+                        fn (Inscripcion $inscripcion) => $inscripcion->integrantes->count()
+                    ),
+                ];
+            })
+            ->sortBy('nombre')
+            ->values();
+
+        $emergenciaParticipantes = $emergenciaInscripciones
+            ->flatMap(function (Inscripcion $inscripcion) {
+                return $inscripcion->integrantes
+                    ->sortByDesc(fn ($integrante) => (bool) $integrante->es_capitan)
+                    ->map(function ($integrante) use ($inscripcion) {
+                        return [
+                            'integrante_id' => (int) $integrante->id,
+                            'categoria_id' => (int) $inscripcion->categoria_id,
+                            'categoria' => (string) ($inscripcion->categoria?->nombre ?? 'Categoría'),
+                            'participante' => (string) $integrante->nombre_completo,
+                            'equipo' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
+                            'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
+                            'prototipo' => (string) ($inscripcion->nombre_prototipo ?? 'Sin prototipo'),
+                            'es_capitan' => (bool) $integrante->es_capitan,
+                        ];
+                    });
+            })
+            ->sortBy([
+                ['categoria', 'asc'],
+                ['equipo', 'asc'],
+                ['participante', 'asc'],
+            ])
+            ->values();
+
+        $activeTab = $request->query('tab', 'plantillas');
+        if (! in_array($activeTab, self::CERTIFICADOS_TABS, true)) {
+            $activeTab = 'plantillas';
+        }
+
         return Inertia::render('Admin/Certificados', [
             'competenciaId' => $competenciaId,
+            'activeTab' => $activeTab,
             'competencias' => $competencias,
             'tiposCertificados' => $this->service->tiposCertificados(),
             'configuracionDefault' => $this->service->configuracionDefault(),
             'plantillas' => $plantillas,
+            'emergenciaCategorias' => $emergenciaCategorias,
+            'emergenciaParticipantes' => $emergenciaParticipantes,
         ]);
     }
 
@@ -224,6 +287,45 @@ class CertificadoController extends Controller
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="preview-certificado.pdf"',
+        ]);
+    }
+
+    public function downloadManual(Request $request)
+    {
+        $validated = $request->validate([
+            'competencia_id' => ['required', 'integer', 'min:1'],
+            'integrante_id' => ['required', 'integer', 'min:1'],
+            'tipo_certificado' => ['required', Rule::in(PlantillaCertificado::TIPOS)],
+        ]);
+
+        $perteneceACompetencia = Inscripcion::query()
+            ->where('competencia_id', (int) $validated['competencia_id'])
+            ->whereHas('integrantes', fn ($query) => $query->where('id', (int) $validated['integrante_id']))
+            ->aprobadas()
+            ->exists();
+
+        if (! $perteneceACompetencia) {
+            return redirect()
+                ->route('admin.certificados.index', [
+                    'competencia_id' => (int) $validated['competencia_id'],
+                    'tab' => 'manual',
+                ])
+                ->withErrors([
+                    'integrante_id' => 'El integrante seleccionado no pertenece a una inscripción aprobada de esta competencia.',
+                ]);
+        }
+
+        $certificado = $this->service->generarParaIntegranteComoAdminPorTipo(
+            (int) $validated['integrante_id'],
+            (string) $validated['tipo_certificado']
+        );
+
+        abort_unless(Storage::disk('public')->exists($certificado->archivo_pdf), 404);
+
+        $nombre = 'certificado-' . $certificado->id . '.pdf';
+
+        return Storage::disk('public')->download($certificado->archivo_pdf, $nombre, [
+            'Content-Type' => 'application/pdf',
         ]);
     }
 }
