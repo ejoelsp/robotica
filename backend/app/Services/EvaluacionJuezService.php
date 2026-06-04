@@ -1192,6 +1192,33 @@ class EvaluacionJuezService
         }
     }
 
+    public function repararPodioFinalEnfrentamiento(int $competenciaId, int $categoriaId, User $juez): array
+    {
+        $categoria = Categoria::query()
+            ->with(['configCalificacion.mecanismo'])
+            ->where('competencia_id', $competenciaId)
+            ->whereKey($categoriaId)
+            ->firstOrFail();
+
+        $config = $categoria->configCalificacion;
+
+        if (! $config) {
+            throw ValidationException::withMessages([
+                'categoria_id' => 'La categoria seleccionada no tiene configuracion de calificacion.',
+            ]);
+        }
+
+        $this->sincronizarPodioFinalEnfrentamiento($categoriaId, $competenciaId, $config, $juez);
+
+        $final = Ronda::query()
+            ->where('categoria_id', $categoriaId)
+            ->where('es_final', true)
+            ->orderByDesc('orden')
+            ->firstOrFail();
+
+        return $this->consolidacionService->obtenerVista($competenciaId, $categoriaId, (int) $final->id);
+    }
+
     private function sincronizarPodioFinalEnfrentamiento(
         int $categoriaId,
         int $competenciaId,
