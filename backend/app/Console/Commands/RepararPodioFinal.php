@@ -16,7 +16,7 @@ class RepararPodioFinal extends Command
         {--admin-id= : ID del usuario admin que ejecuta la reparacion}
         {--admin-email= : Correo del usuario admin que ejecuta la reparacion}';
 
-    protected $description = 'Reconstruye el podio final de una categoria de enfrentamiento';
+    protected $description = 'Reconstruye el podio final y el tercer lugar de una categoria de enfrentamiento';
 
     public function handle(EvaluacionJuezService $service): int
     {
@@ -45,7 +45,7 @@ class RepararPodioFinal extends Command
 
         $rows = collect($vista['rows'] ?? []);
 
-        $this->info('Podio final reparado correctamente.');
+        $this->info('Podio final y tercer lugar reparados correctamente.');
         $this->line(sprintf(
             'Competencia ID: %s | Categoria: %s | Ronda: %s',
             (string) ($vista['scope']['competencia_id'] ?? $competenciaId),

@@ -18,6 +18,7 @@ use App\Models\SorteoDetalle;
 use App\Models\User;
 use App\Modules\Admin\Notificaciones\Services\NotificacionService;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -1208,6 +1209,7 @@ class EvaluacionJuezService
             ]);
         }
 
+        $this->sincronizarTercerLugarEnfrentamiento($categoriaId, $competenciaId, $config, $juez);
         $this->sincronizarPodioFinalEnfrentamiento($categoriaId, $competenciaId, $config, $juez);
 
         $final = Ronda::query()
@@ -1301,6 +1303,82 @@ class EvaluacionJuezService
         });
 
         event(new ResultadosActualizados($competenciaId, $categoriaId, (int) $final->id, 'cerrado', true));
+    }
+
+    private function sincronizarTercerLugarEnfrentamiento(
+        int $categoriaId,
+        int $competenciaId,
+        ConfigCalificacion $config,
+        User $juez
+    ): void {
+        $tercerLugar = Ronda::query()
+            ->where('categoria_id', $categoriaId)
+            ->where('tipo', 'tercer_lugar')
+            ->orderByDesc('orden')
+            ->first();
+
+        if (! $tercerLugar || (string) $tercerLugar->estado !== 'cerrada') {
+            return;
+        }
+
+        $clasificacionesTercerLugar = Clasificacion::query()
+            ->where('competencia_id', $competenciaId)
+            ->where('categoria_id', $categoriaId)
+            ->where('ronda_id', $tercerLugar->id)
+            ->whereIn('estado_publicacion', ['visible', 'cerrado'])
+            ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
+            ->orderBy('posicion')
+            ->get();
+
+        if ($clasificacionesTercerLugar->count() < 2) {
+            return;
+        }
+
+        $ganador = $this->resolverGanadorEncuentroEnfrentamiento($tercerLugar, $config, $clasificacionesTercerLugar)
+            ?? $clasificacionesTercerLugar->first();
+
+        if (! $ganador) {
+            return;
+        }
+
+        $podio = collect([$ganador]);
+        $ganadorInscripcionId = $this->clasificacionInscripcionId($ganador);
+
+        $perdedor = $clasificacionesTercerLugar
+            ->first(fn (Clasificacion $clasificacion) => $this->clasificacionInscripcionId($clasificacion) !== $ganadorInscripcionId)
+            ?? $clasificacionesTercerLugar->first();
+
+        if ($perdedor) {
+            $podio->push($perdedor);
+        }
+
+        DB::transaction(function () use ($tercerLugar, $podio, $competenciaId, $categoriaId, $juez): void {
+            Clasificacion::query()
+                ->where('competencia_id', $competenciaId)
+                ->where('categoria_id', $categoriaId)
+                ->where('ronda_id', $tercerLugar->id)
+                ->delete();
+
+            foreach ($podio->take(2)->values() as $index => $clasificacion) {
+                Clasificacion::create([
+                    'competencia_id' => $competenciaId,
+                    'categoria_id' => $categoriaId,
+                    'equipo_id' => (int) $clasificacion->equipo_id,
+                    'ronda_id' => (int) $tercerLugar->id,
+                    'puntaje_total' => $clasificacion->puntaje_total ?? 0,
+                    'tiempo_total' => $clasificacion->tiempo_total,
+                    'penal_total' => $clasificacion->penal_total ?? 0,
+                    'posicion' => $index + 1,
+                    'estado_publicacion' => 'cerrado',
+                    'publicado_at' => now(),
+                    'publicado_por' => $juez->id,
+                    'origen_version' => (int) ($clasificacion->origen_version ?? 0),
+                    'detalle_json' => $clasificacion->detalle_json,
+                ]);
+            }
+        });
+
+        event(new ResultadosActualizados($competenciaId, $categoriaId, (int) $tercerLugar->id, 'cerrado', true));
     }
 
     private function resolverGanadorEncuentroEnfrentamiento(
