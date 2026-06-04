@@ -676,7 +676,8 @@ class ClasificacionConsolidacionService
             : $this->formatearResultadoClasificacion($clasificacion, $config);
 
         if ($this->clasificacionUsaEnfrentamiento($config) && $posicion === 3) {
-            $resultadoLabel = 'Tercer lugar: ganó ' . $resultadoLabel;
+            $resultadoLabel = 'Tercer lugar: ' . $this->nombreParticipanteDesdeClasificacion($clasificacion) . ' ganó '
+                . $this->resultadoDesdePerspectivaClasificacion($clasificacion, $config, true);
         }
 
         return [
@@ -1836,16 +1837,24 @@ class ClasificacionConsolidacionService
 
     private function formatearResultadoEnfrentamiento(Clasificacion $clasificacion, ConfigCalificacion $config): string
     {
+        return $this->resultadoDesdePerspectivaClasificacion($clasificacion, $config, false);
+    }
+
+    private function resultadoDesdePerspectivaClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config, bool $invertir = false): string
+    {
         $payload = $clasificacion->detalle_json['evaluaciones'][0]['payload_json'] ?? [];
 
         if (isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])) {
-            return (int) $payload['marcador_equipo_a'] . ' - ' . (int) $payload['marcador_equipo_b'];
+            $valorA = (int) $payload['marcador_equipo_a'];
+            $valorB = (int) $payload['marcador_equipo_b'];
+
+            return $invertir ? $valorB . ' - ' . $valorA : $valorA . ' - ' . $valorB;
         }
 
         if ($this->registroTemplate($config) === 'tabla_enfrentamiento_criterios') {
             [$totalA, $totalB] = $this->totalesTablaEnfrentamiento($payload, $config);
 
-            return $totalA . ' - ' . $totalB;
+            return $invertir ? $totalB . ' - ' . $totalA : $totalA . ' - ' . $totalB;
         }
 
         return $this->formatearResultadoClasificacion($clasificacion, $config);
