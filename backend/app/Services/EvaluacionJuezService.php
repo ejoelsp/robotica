@@ -1252,7 +1252,7 @@ class EvaluacionJuezService
             ->limit(2)
             ->get();
 
-        if ($finalistas->count() < 2) {
+        if ($finalistas->isEmpty()) {
             return;
         }
 
@@ -1467,6 +1467,17 @@ class EvaluacionJuezService
         // "Semifinal" or "Final" should only be applied to rounds created by
         // the system from a previous round.
         if (! $ronda->ronda_origen_id) {
+            if ($participantes <= 2) {
+                $ronda->update([
+                    'tipo' => 'final',
+                    'nombre' => $this->nombreRondaAutomaticaEnfrentamiento('final', $participantes, (int) ($ronda->orden ?? 1)),
+                    'criterio_clasificacion' => 'ganador_enfrentamiento',
+                    'es_final' => true,
+                ]);
+
+                return;
+            }
+
             $ronda->update([
                 'criterio_clasificacion' => 'ganador_enfrentamiento',
                 'es_final' => (bool) ($ronda->es_final ?? false),

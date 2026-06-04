@@ -47,6 +47,7 @@ const updatingJuezId = ref(null);
 const isEstadoJuezModalOpen = ref(false);
 const juezEstadoSeleccionado = ref(null);
 const isRondasModalOpen = ref(false);
+const rondasAutomaticasMode = ref(false);
 const rondasLoading = ref(false);
 const rondasSaving = ref(false);
 const rondasCategoria = ref(null);
@@ -768,6 +769,24 @@ const rondaCriterioOptions = [
   { value: "mayor_promedio", label: "Mayor promedio" },
 ];
 
+const rondaTipoLabel = (tipo) => ({
+  clasificatoria: "Clasificatoria",
+  semifinal: "Semifinal",
+  final: "Final",
+  libre: "Libre",
+  tercer_lugar: "Tercer lugar",
+}[tipo] ?? "Libre");
+
+const rondasModalTitle = computed(() => (
+  rondasAutomaticasMode.value ? "Llaves automáticas" : "Gestión de rondas"
+));
+
+const rondasModalDescription = computed(() => (
+  rondasAutomaticasMode.value
+    ? "El tipo se asigna automáticamente. Solo puedes modificar el estado y marcar si la ronda es final."
+    : "Los jueces solo verán rondas en estado Activa para registrar resultados. Define cuántas rondas tendrá cada categoría y activa la ronda que evaluarán los jueces."
+));
+
 function resetRondaForm() {
   rondaEditingId.value = null;
   rondaForm.value = {
@@ -797,11 +816,7 @@ async function loadRondas(cat) {
 }
 
 async function openRondas(cat) {
-  if (isCategoriaEnfrentamiento(cat)) {
-    showMessage("La gestión de llaves para esta categoría se genera automáticamente.");
-    return;
-  }
-
+  rondasAutomaticasMode.value = isCategoriaEnfrentamiento(cat);
   rondasCategoria.value = {
     id: cat.id,
     nombre: cat.nombre,
@@ -815,6 +830,7 @@ async function openRondas(cat) {
 
 function closeRondasModal() {
   isRondasModalOpen.value = false;
+  rondasAutomaticasMode.value = false;
   rondasCategoria.value = null;
   rondas.value = [];
   resetRondaForm();
@@ -837,7 +853,12 @@ function editRonda(ronda) {
 async function saveRonda(crearSiguienteRonda = false) {
   if (!rondasCategoria.value?.id) return;
 
-  if (Number(rondaForm.value.cantidad_intentos || 0) < 1) {
+  if (rondasAutomaticasMode.value && !rondaEditingId.value) {
+    showMessage("Selecciona una ronda para editarla.");
+    return;
+  }
+
+  if (!rondasAutomaticasMode.value && Number(rondaForm.value.cantidad_intentos || 0) < 1) {
     showMessage("La cantidad de intentos debe ser al menos 1.");
     return;
   }
@@ -1061,12 +1082,14 @@ function requestRemoveRonda(ronda) {
               <Cog6ToothIcon class="h-5 w-5" />
               Gestionar rondas
             </button>
-            <div
+            <button
               v-else
-              class="inline-flex items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700"
+              type="button"
+              @click="openRondas(cat)"
+              class="inline-flex items-center justify-center rounded-xl border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm font-semibold text-violet-700 transition hover:bg-violet-100"
             >
               Llaves automáticas
-            </div>
+            </button>
           </div>
         </div>
 
@@ -1900,7 +1923,7 @@ function requestRemoveRonda(ronda) {
             <div class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 shadow-xl">
               <div class="flex items-start justify-between gap-4 border-b border-slate-200 bg-white p-5">
                 <div>
-                  <h2 class="text-lg font-semibold text-slate-900">Gestión de rondas</h2>
+                  <h2 class="text-lg font-semibold text-slate-900">{{ rondasModalTitle }}</h2>
                   <p class="mt-1 text-sm text-slate-500">
                     {{ rondasCategoria?.nombre ?? "" }} · {{ rondasCategoria?.inscripciones_count ?? 0 }} equipos inscritos
                   </p>
@@ -1918,17 +1941,32 @@ function requestRemoveRonda(ronda) {
               <div class="grid min-h-0 flex-1 gap-4 overflow-y-auto p-4 lg:grid-cols-[360px_1fr]">
                 <div class="rounded-2xl border border-slate-200 bg-white p-4">
                   <h3 class="text-base font-semibold text-slate-900">
-                    {{ rondaEditingId ? "Editar ronda" : "Nueva ronda" }}
+                    {{ rondaEditingId ? "Editar ronda" : (rondasAutomaticasMode ? "Ronda automática" : "Nueva ronda") }}
                   </h3>
                   <p class="mt-1 text-sm text-slate-500">
-                    El nombre se genera automáticamente con el tipo y el orden de la ronda.
+                    {{ rondasModalDescription }}
                   </p>
-                  <p class="mt-1 text-xs text-slate-500">
+                  <p v-if="!rondasAutomaticasMode" class="mt-1 text-xs text-slate-500">
                     Si no marcas intentos consecutivos, todos hacen el intento 1 antes de pasar al intento 2.
                   </p>
 
                   <div class="mt-4 space-y-4">
-                    <div class="grid grid-cols-1 gap-3">
+                    <div v-if="rondasAutomaticasMode" class="grid grid-cols-1 gap-3">
+                      <div v-if="rondaEditingId" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                        <span class="block text-xs font-medium uppercase tracking-wide text-slate-500">Tipo</span>
+                        <span class="mt-1 block text-sm font-semibold text-slate-900">
+                          {{ rondaTipoLabel(rondaForm.tipo) }}
+                        </span>
+                        <p class="mt-1 text-xs text-slate-500">
+                          Este valor lo determina el sistema automáticamente.
+                        </p>
+                      </div>
+                      <div v-else class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                        Selecciona una ronda para revisar su tipo y ajustar su estado.
+                      </div>
+                    </div>
+
+                    <div v-else class="grid grid-cols-1 gap-3">
                       <div>
                         <label class="mb-1 block text-sm font-medium text-slate-700">Tipo</label>
                         <select
@@ -1943,7 +1981,7 @@ function requestRemoveRonda(ronda) {
                       </div>
                     </div>
 
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div v-if="!rondasAutomaticasMode" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label class="mb-1 block text-sm font-medium text-slate-700">Intentos por ronda</label>
                         <input
@@ -1967,7 +2005,7 @@ function requestRemoveRonda(ronda) {
                       </div>
                     </div>
 
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div v-if="!rondasAutomaticasMode" class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label class="mb-1 block text-sm font-medium text-slate-700">Criterio</label>
                         <select
@@ -1979,7 +2017,9 @@ function requestRemoveRonda(ronda) {
                           </option>
                         </select>
                       </div>
+                    </div>
 
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label class="mb-1 block text-sm font-medium text-slate-700">Estado</label>
                         <select
@@ -1991,18 +2031,18 @@ function requestRemoveRonda(ronda) {
                           <option value="cerrada">Cerrada</option>
                         </select>
                       </div>
+
+                      <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
+                        <input
+                          v-model="rondaForm.es_final"
+                          type="checkbox"
+                          class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        Es ronda final
+                      </label>
                     </div>
 
-                    <label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-700">
-                      <input
-                        v-model="rondaForm.es_final"
-                        type="checkbox"
-                        class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      Es ronda final
-                    </label>
-
-                    <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700">
+                    <label v-if="!rondasAutomaticasMode" class="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700">
                       <input
                         v-model="rondaForm.intentos_consecutivos"
                         type="checkbox"
@@ -2018,15 +2058,15 @@ function requestRemoveRonda(ronda) {
                       <button
                         type="button"
                         @click="saveRonda()"
-                        :disabled="rondasSaving"
+                        :disabled="rondasSaving || (rondasAutomaticasMode && !rondaEditingId)"
                         class="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         <CheckCircleIcon class="h-5 w-5" />
-                        {{ rondasSaving ? "Guardando..." : (rondaEditingId ? "Guardar cambios" : "Crear ronda") }}
+                        {{ rondasSaving ? "Guardando..." : (rondaEditingId ? "Guardar cambios" : (rondasAutomaticasMode ? "Selecciona una ronda" : "Crear ronda")) }}
                       </button>
 
                       <button
-                        v-if="rondaEditingId"
+                        v-if="rondaEditingId || rondasAutomaticasMode"
                         type="button"
                         @click="resetRondaForm"
                         class="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
@@ -2064,6 +2104,9 @@ function requestRemoveRonda(ronda) {
                             <span class="inline-flex rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700 ring-1 ring-cyan-200">
                               {{ intentosResumenLabel(ronda) }}
                             </span>
+                            <span class="inline-flex rounded-full bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
+                              Tipo: {{ rondaTipoLabel(ronda.tipo) }}
+                            </span>
                             <span v-if="ronda.clasifican_cantidad" class="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 ring-1 ring-emerald-200">
                               Clasifican {{ ronda.clasifican_cantidad }}
                             </span>
@@ -2094,6 +2137,7 @@ function requestRemoveRonda(ronda) {
                             <PencilSquareIcon class="h-5 w-5 text-slate-700" />
                           </button>
                           <button
+                            v-if="!rondasAutomaticasMode"
                             type="button"
                             @click="requestRemoveRonda(ronda)"
                             class="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
