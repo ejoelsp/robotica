@@ -26,6 +26,7 @@ defineOptions({ layout: AdminLayout });
 const page = usePage();
 
 const inscriptions = computed(() => page.props.inscriptions ?? []);
+const categories = computed(() => page.props.categories ?? []);
 const stats = computed(() => page.props.stats ?? []);
 const pendingPayments = computed(() => page.props.pendingPayments ?? []);
 const configuracionPago = computed(() => page.props.configuracionPago ?? null);
@@ -61,7 +62,7 @@ const puedeGuardarConfiguracionPago = computed(() => {
 // ============================
 const activeTab = ref("list"); // "list" | "validation"
 const searchTerm = ref("");
-const filterStatus = ref("all");
+const filterCategoryId = ref("all");
 
 // ============================
 //  MODAL RECHAZO (PAGO)
@@ -210,13 +211,11 @@ const filteredInscriptions = computed(() => {
       (i.leader ?? "").toLowerCase().includes(term) ||
       (i.institution ?? "").toLowerCase().includes(term);
 
-    const matchesFilter =
-      filterStatus.value === "all" ||
-      (filterStatus.value === "Aprobada" && i.status === "Aprobada") ||
-      (filterStatus.value === "Rechazada" && i.status === "Rechazada") ||
-      (filterStatus.value === "Pendiente" &&
-        (i.paymentStatus === "En revisión" || i.paymentStatus === "En revision" || i.paymentStatus === "No subido"));
-    return matchesSearch && matchesFilter;
+    const matchesCategory =
+      filterCategoryId.value === "all" ||
+      Number(i.categoryId) === Number(filterCategoryId.value);
+
+    return matchesSearch && matchesCategory;
   });
 });
 
@@ -341,7 +340,7 @@ function closeExportMenu() {
 function exportCSV() {
   const params = new URLSearchParams({
     format: "csv",
-    filter: filterStatus.value,
+    category_id: filterCategoryId.value === "all" ? "" : String(filterCategoryId.value),
     q: searchTerm.value?.trim() || "",
   });
   window.location.href = `/admin/inscripciones/export?${params.toString()}`;
@@ -351,7 +350,7 @@ function exportCSV() {
 function exportExcel() {
   const params = new URLSearchParams({
     format: "xlsx",
-    filter: filterStatus.value,
+    category_id: filterCategoryId.value === "all" ? "" : String(filterCategoryId.value),
     q: searchTerm.value?.trim() || "",
   });
   window.location.href = `/admin/inscripciones/export?${params.toString()}`;
@@ -529,15 +528,15 @@ function exportExcel() {
             </div>
 
             <!-- Filter -->
-            <div class="w-full md:w-56">
+            <div class="w-full md:w-72">
               <select
-                v-model="filterStatus"
+                v-model="filterCategoryId"
                 class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-200"
               >
-                <option value="all">Todos</option>
-                <option value="Aprobada">Aprobadas</option>
-                <option value="Pendiente">Pendientes</option>
-                <option value="Rechazada">Rechazadas</option>
+                <option value="all">Todas las categorías</option>
+                <option v-for="category in categories" :key="category.id" :value="category.id">
+                  {{ category.name }} · {{ category.count }} inscripciones
+                </option>
               </select>
             </div>
 

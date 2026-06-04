@@ -3,6 +3,7 @@
 namespace App\Modules\Admin\Inscripciones\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Categoria;
 use App\Models\ConfiguracionPago;
 use App\Models\Inscripcion;
 use App\Modules\Admin\Inscripciones\Requests\RejectComprobanteRequest;
@@ -49,11 +50,12 @@ class AdminInscripcionController extends Controller
                 return [
                     'id' => $inscripcion->id,
                     'team' => $inscripcion->equipo?->nombre ?? 'Sin equipo',
-                    'leader' => $inscripcion->usuarioRegistro?->name ?? 'Sin lider',
+                    'leader' => $inscripcion->usuarioRegistro?->name ?? 'Sin líder',
                     'email' => $inscripcion->usuarioRegistro?->email ?? '',
                     'phone' => $inscripcion->telefono_contacto ?? '',
                     'institution' => $inscripcion->equipo?->institucion ?? '-',
-                    'category' => $inscripcion->categoria?->nombre ?? 'Sin categoria',
+                    'categoryId' => $inscripcion->categoria_id ? (int) $inscripcion->categoria_id : null,
+                    'category' => $inscripcion->categoria?->nombre ?? 'Sin categoría',
                     'prototype' => $inscripcion->nombre_prototipo ?? 'Sin prototipo',
                     'categoryPrice' => (float) ($inscripcion->categoria?->costo_inscripcion ?? 0),
                     'status' => $status,
@@ -71,6 +73,29 @@ class AdminInscripcionController extends Controller
                     'puede_validar' => ($inscripcion->estado_comprobante === 'revision') && !empty($inscripcion->comprobante_pago),
                 ];
             })
+            ->values();
+
+        $competitionIds = $inscripcionModels
+            ->pluck('competencia_id')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $inscriptionCountsByCategory = $inscripcionModels
+            ->groupBy('categoria_id')
+            ->map(fn ($items) => $items->count());
+
+        $categories = Categoria::query()
+            ->select('id', 'nombre')
+            ->when($competitionIds->isNotEmpty(), fn ($query) => $query->whereIn('competencia_id', $competitionIds))
+            ->orderBy('nombre')
+            ->get()
+            ->map(fn (Categoria $categoria) => [
+                'id' => (int) $categoria->id,
+                'name' => (string) $categoria->nombre,
+                'count' => (int) ($inscriptionCountsByCategory[$categoria->id] ?? 0),
+            ])
+            ->sortBy('name')
             ->values();
 
         $stats = [
@@ -108,7 +133,7 @@ class AdminInscripcionController extends Controller
                     ->map(function ($inscripcion) {
                         return [
                             'id' => $inscripcion->id,
-                            'category' => $inscripcion->categoria?->nombre ?? 'Sin categoria',
+                            'category' => $inscripcion->categoria?->nombre ?? 'Sin categoría',
                             'prototype' => $inscripcion->nombre_prototipo ?? 'Sin prototipo',
                             'amount' => (float) ($inscripcion->categoria?->costo_inscripcion ?? 0),
                         ];
@@ -117,7 +142,7 @@ class AdminInscripcionController extends Controller
 
                 return [
                     'id' => $principal->id,
-                    'leader' => $principal->usuarioRegistro?->name ?? 'Sin lider',
+                    'leader' => $principal->usuarioRegistro?->name ?? 'Sin líder',
                     'email' => $principal->usuarioRegistro?->email ?? '',
                     'institution' => $principal->equipo?->institucion ?? '-',
                     'competition' => $principal->competencia?->nombre ?? 'Sin competencia',
@@ -134,6 +159,7 @@ class AdminInscripcionController extends Controller
 
         return Inertia::render('Admin/Inscripciones', [
             'inscriptions' => $inscriptions,
+            'categories' => $categories,
             'stats' => $stats,
             'pendingPayments' => $pendingPayments,
             'configuracionPago' => $this->configuracionPagoActiva(),
@@ -257,6 +283,7 @@ class AdminInscripcionController extends Controller
     {
         $format = strtolower((string) $request->query('format', 'csv'));
         $filter = (string) $request->query('filter', 'all');
+        $categoryId = (int) $request->query('category_id', 0);
         $q = trim((string) $request->query('q', ''));
 
         $query = Inscripcion::query()
@@ -274,6 +301,10 @@ class AdminInscripcionController extends Controller
             $query->where('estado_comprobante', 'rechazado');
         } elseif ($filter === 'Pendiente') {
             $query->whereIn('estado_comprobante', ['no_subido', 'revision']);
+        }
+
+        if ($categoryId > 0) {
+            $query->where('categoria_id', $categoryId);
         }
 
         if ($q !== '') {
@@ -315,19 +346,19 @@ class AdminInscripcionController extends Controller
 
             return [
                 'Equipo' => $inscripcion->equipo?->nombre ?? '',
-                'Lider' => $inscripcion->usuarioRegistro?->name ?? '',
+                'Líder' => $inscripcion->usuarioRegistro?->name ?? '',
                 'Email' => $inscripcion->usuarioRegistro?->email ?? '',
-                'Institucion' => $inscripcion->equipo?->institucion ?? '',
+                'Institución' => $inscripcion->equipo?->institucion ?? '',
                 'Competencia' => $inscripcion->competencia?->nombre ?? '',
-                'Categoria' => $inscripcion->categoria?->nombre ?? '',
+                'Categoría' => $inscripcion->categoria?->nombre ?? '',
                 'Estado' => $status,
                 'Pago' => $pago,
-                'Observacion' => $inscripcion->observacion_rechazo ?: ($inscripcion->motivo_rechazo ?? ''),
+                'Observación' => $inscripcion->observacion_rechazo ?: ($inscripcion->motivo_rechazo ?? ''),
                 'Fecha' => optional($inscripcion->created_at)?->format('Y-m-d H:i:s') ?? '',
             ];
         })->values()->all();
 
-        $filenameBase = 'inscripciones_' . date('Ymd_His') . '_' . strtolower($filter);
+        $filenameBase = 'inscripciones_' . date('Ymd_His') . '_categoria_' . ($categoryId > 0 ? $categoryId : 'todas');
 
         if ($format === 'xlsx') {
             if (!class_exists(\PhpOffice\PhpSpreadsheet\Spreadsheet::class)) {
@@ -335,8 +366,8 @@ class AdminInscripcionController extends Controller
             }
 
             $headers = array_keys($rows[0] ?? [
-                'Equipo' => '', 'Lider' => '', 'Email' => '', 'Institucion' => '', 'Competencia' => '',
-                'Categoria' => '', 'Estado' => '', 'Pago' => '', 'Observacion' => '', 'Fecha' => '',
+                'Equipo' => '', 'Líder' => '', 'Email' => '', 'Institución' => '', 'Competencia' => '',
+                'Categoría' => '', 'Estado' => '', 'Pago' => '', 'Observación' => '', 'Fecha' => '',
             ]);
 
             $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
@@ -372,8 +403,8 @@ class AdminInscripcionController extends Controller
         }
 
         $headers = array_keys($rows[0] ?? [
-            'Equipo' => '', 'Lider' => '', 'Email' => '', 'Institucion' => '', 'Competencia' => '',
-            'Categoria' => '', 'Estado' => '', 'Pago' => '', 'Observacion' => '', 'Fecha' => '',
+            'Equipo' => '', 'Líder' => '', 'Email' => '', 'Institución' => '', 'Competencia' => '',
+            'Categoría' => '', 'Estado' => '', 'Pago' => '', 'Observación' => '', 'Fecha' => '',
         ]);
 
         $filename = "{$filenameBase}.csv";
