@@ -677,7 +677,7 @@ class ClasificacionConsolidacionService
 
         if ($this->clasificacionUsaEnfrentamiento($config) && $posicion === 3) {
             $resultadoLabel = 'Tercer lugar: ' . $this->nombreParticipanteDesdeClasificacion($clasificacion) . ' ganó '
-                . $this->resultadoDesdePerspectivaClasificacion($clasificacion, $config, true);
+                . $this->resultadoGanadorDesdeClasificacion($clasificacion, $config);
         }
 
         return [
@@ -1837,27 +1837,77 @@ class ClasificacionConsolidacionService
 
     private function formatearResultadoEnfrentamiento(Clasificacion $clasificacion, ConfigCalificacion $config): string
     {
-        return $this->resultadoDesdePerspectivaClasificacion($clasificacion, $config, false);
-    }
-
-    private function resultadoDesdePerspectivaClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config, bool $invertir = false): string
-    {
         $payload = $clasificacion->detalle_json['evaluaciones'][0]['payload_json'] ?? [];
 
         if (isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])) {
-            $valorA = (int) $payload['marcador_equipo_a'];
-            $valorB = (int) $payload['marcador_equipo_b'];
-
-            return $invertir ? $valorB . ' - ' . $valorA : $valorA . ' - ' . $valorB;
+            return (int) $payload['marcador_equipo_a'] . ' - ' . (int) $payload['marcador_equipo_b'];
         }
 
         if ($this->registroTemplate($config) === 'tabla_enfrentamiento_criterios') {
             [$totalA, $totalB] = $this->totalesTablaEnfrentamiento($payload, $config);
 
-            return $invertir ? $totalB . ' - ' . $totalA : $totalA . ' - ' . $totalB;
+            return $totalA . ' - ' . $totalB;
         }
 
         return $this->formatearResultadoClasificacion($clasificacion, $config);
+    }
+
+    private function resultadoGanadorDesdeClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config): string
+    {
+        $sorteo = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', (int) $clasificacion->ronda_id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if (! $sorteo || $sorteo->tipo_sorteo !== 'enfrentamiento') {
+            return $this->formatearResultadoEnfrentamiento($clasificacion, $config);
+        }
+
+        $grupo = $sorteo->detalles
+            ->filter(fn ($detalle) => $detalle->estado !== 'directo')
+            ->groupBy(fn ($detalle) => $detalle->grupo ?? $detalle->orden)
+            ->first();
+
+        if (! $grupo || $grupo->count() < 2) {
+            return $this->formatearResultadoEnfrentamiento($clasificacion, $config);
+        }
+
+        $ordenados = $grupo->sortBy('orden')->values();
+        $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
+        $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
+
+        if (! $detalleA?->inscripcion || ! $detalleB?->inscripcion) {
+            return $this->formatearResultadoEnfrentamiento($clasificacion, $config);
+        }
+
+        $resultado = Resultado::query()
+            ->where('ronda_id', (int) $clasificacion->ronda_id)
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion_id,
+                (int) $detalleB->inscripcion_id,
+            ])
+            ->whereIn('estado', ['registrado', 'publicado'])
+            ->latest('updated_at')
+            ->first();
+
+        if (! $resultado) {
+            return $this->formatearResultadoEnfrentamiento($clasificacion, $config);
+        }
+
+        $valores = $this->valoresResultadoEnfrentamiento($resultado, $config);
+
+        if (! $valores || (float) $valores['a'] === (float) $valores['b']) {
+            return $this->formatearResultadoEnfrentamiento($clasificacion, $config);
+        }
+
+        $menorValorGana = ! in_array($this->registroTemplate($config), ['marcador', 'tabla_enfrentamiento_criterios'], true)
+            && ($this->registroTemplate($config) === 'tiempo' || (string) $config->orden_ranking === 'asc');
+        $ganaA = $menorValorGana
+            ? (float) $valores['a'] < (float) $valores['b']
+            : (float) $valores['a'] > (float) $valores['b'];
+
+        return $this->resultadoDesdePerspectiva($valores, $ganaA ? 'A' : 'B');
     }
 
     private function totalesTablaEnfrentamiento(array $payload, ConfigCalificacion $config): array
