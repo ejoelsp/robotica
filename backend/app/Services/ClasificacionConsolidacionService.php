@@ -1718,7 +1718,7 @@ class ClasificacionConsolidacionService
         $plantilla = $this->registroTemplate($config);
 
         if ($this->clasificacionNoParticipa($clasificacion)) {
-            return 'Sin tiempo valido';
+            return 'Sin tiempo válido';
         }
 
         if ($plantilla === 'marcador') {
@@ -1767,7 +1767,7 @@ class ClasificacionConsolidacionService
             'soccer_goles' => $this->formatearMarcadorDesdeDetalle($clasificacion),
             'mixto' => $clasificacion->puntaje_total !== null
                 ? number_format((float) $clasificacion->puntaje_total, 2) . $unidad
-                    . ($clasificacion->tiempo_total !== null ? ' / ' . number_format((float) $clasificacion->tiempo_total, 3) . ' s' : '')
+                    . ($clasificacion->tiempo_total !== null ? ' / ' . $this->formatearTiempoDesdeSegundos($clasificacion->tiempo_total) : '')
                 : 'Sin consolidar',
             'solo_registro' => isset($detalle['metric_primary']) && $detalle['metric_primary'] !== null
                 ? number_format((float) $detalle['metric_primary'], 3) . $unidad
@@ -1879,7 +1879,7 @@ class ClasificacionConsolidacionService
             ->values();
 
         if ($payloads->contains(fn (array $payload) => (bool) ($payload['sin_tiempo_valido'] ?? false) || (bool) ($payload['no_participa'] ?? false))) {
-            return 'Sin tiempo valido';
+            return 'Sin tiempo válido';
         }
 
         $valorPrincipal = $resultados
@@ -2188,7 +2188,7 @@ class ClasificacionConsolidacionService
             return [
                 'tipo' => 'resumen',
                 'titulo' => 'Detalle del resultado',
-                'resultado_label' => 'Sin tiempo valido',
+                'resultado_label' => 'Sin tiempo válido',
             ];
         }
 
@@ -2459,7 +2459,7 @@ class ClasificacionConsolidacionService
     private function formatearPuntajeClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config): string
     {
         if ($this->clasificacionNoParticipa($clasificacion)) {
-            return 'Sin tiempo valido';
+            return 'Sin tiempo válido';
         }
 
         if ($this->clasificacionUsaTiempo($config)) {
@@ -2483,12 +2483,12 @@ class ClasificacionConsolidacionService
             return 'Sin tiempo';
         }
 
-        $totalSeconds = max(0, (int) floor((float) $value));
-        $hours = intdiv($totalSeconds, 3600);
-        $minutes = intdiv($totalSeconds % 3600, 60);
-        $seconds = $totalSeconds % 60;
+        $totalCentiseconds = max(0, (int) round((float) $value * 100));
+        $minutes = intdiv($totalCentiseconds, 6000);
+        $seconds = intdiv($totalCentiseconds % 6000, 100);
+        $centiseconds = $totalCentiseconds % 100;
 
-        return sprintf('%02dh %02dm %02ds', $hours, $minutes, $seconds);
+        return sprintf('%02d:%02d.%02d', $minutes, $seconds, $centiseconds);
     }
 
 }

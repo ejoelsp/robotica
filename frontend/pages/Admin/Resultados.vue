@@ -134,6 +134,20 @@ const currentSummary = computed(() => {
 
 const finalesUsaTiempo = computed(() => Boolean(finalesData.value.scope?.usa_tiempo));
 
+function formatStopwatchValue(value) {
+  if (value === null || value === undefined || value === "") return "-";
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "-";
+
+  const totalCentiseconds = Math.max(0, Math.round(numericValue * 100));
+  const minutes = Math.floor(totalCentiseconds / 6000);
+  const seconds = Math.floor((totalCentiseconds % 6000) / 100);
+  const centiseconds = totalCentiseconds % 100;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
+
 const publicationHistory = computed(() => {
   return finalesData.value.publication_history ?? [];
 });
@@ -1494,7 +1508,7 @@ onBeforeUnmount(() => {
                   </td>
 
                   <td v-if="!finalesUsaTiempo" class="px-6 py-4 text-slate-700">
-                    {{ row.tiempo_total ?? "-" }}
+                    {{ formatStopwatchValue(row.tiempo_total) }}
                   </td>
 
                   <td class="px-6 py-4 text-slate-700">
@@ -1983,7 +1997,7 @@ onBeforeUnmount(() => {
                   :type="visibleFieldInputType(field)"
                   :step="field.type === 'number' ? '0.001' : undefined"
                   class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :placeholder="field.type === 'duration' ? 'Ej: 00:07:35' : ''"
+                  :placeholder="field.type === 'duration' ? 'Ej: 01:25.43' : ''"
                 />
                 <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
               </div>
@@ -2096,7 +2110,7 @@ onBeforeUnmount(() => {
                   :type="visibleFieldInputType(field)"
                   :step="field.type === 'number' ? '0.001' : undefined"
                   class="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  :placeholder="field.type === 'duration' ? 'Ej: 00:07:35' : ''"
+                  :placeholder="field.type === 'duration' ? 'Ej: 01:25.43' : ''"
                 />
                 <p v-if="editFieldError(field.key)" class="mt-1 text-xs text-red-600">{{ editFieldError(field.key) }}</p>
               </div>

@@ -163,7 +163,7 @@ class EvaluacionJuezService
 
         if (! $ronda || ! $ronda->categoria) {
             throw ValidationException::withMessages([
-                'ronda_id' => 'La ronda seleccionada no existe o no tiene categoria asociada.',
+                'ronda_id' => 'La ronda seleccionada no existe o no tiene categoría asociada.',
             ]);
         }
 
@@ -172,7 +172,7 @@ class EvaluacionJuezService
 
         if (! $config) {
             throw ValidationException::withMessages([
-                'ronda_id' => 'La categoria de la ronda no tiene configuracion de calificacion.',
+                'ronda_id' => 'La categoría de la ronda no tiene configuración de calificación.',
             ]);
         }
 
@@ -269,7 +269,7 @@ class EvaluacionJuezService
 
         if (! $ronda || ! $ronda->categoria) {
             throw ValidationException::withMessages([
-                'ronda_id' => 'La ronda seleccionada no existe o no tiene categoria asociada.',
+                'ronda_id' => 'La ronda seleccionada no existe o no tiene categoría asociada.',
             ]);
         }
 
@@ -739,13 +739,13 @@ class EvaluacionJuezService
 
         if (! $config) {
             throw ValidationException::withMessages([
-                'resultado' => 'La evaluacion no tiene configuracion de calificacion.',
+                'resultado' => 'La evaluación no tiene configuración de calificación.',
             ]);
         }
 
         if (trim((string) ($data['motivo_cambio'] ?? '')) === '') {
             throw ValidationException::withMessages([
-                'motivo_cambio' => 'El motivo de correccion es obligatorio.',
+                'motivo_cambio' => 'El motivo de corrección es obligatorio.',
             ]);
         }
 
@@ -1214,7 +1214,7 @@ class EvaluacionJuezService
 
         if (! $config) {
             throw ValidationException::withMessages([
-                'categoria_id' => 'La categoria seleccionada no tiene configuracion de calificacion.',
+                'categoria_id' => 'La categoría seleccionada no tiene configuración de calificación.',
             ]);
         }
 
@@ -2913,7 +2913,7 @@ class EvaluacionJuezService
                         $seconds = $this->parseDurationToSeconds($value);
 
                         if ($seconds !== null && ! $sinTiempoValido && $seconds <= 0) {
-                            $fail('El tiempo debe ser mayor a cero. Si no hay tiempo valido, usa el boton Sin tiempo valido.');
+                            $fail('El tiempo debe ser mayor a cero. Si no hay tiempo válido, usa el botón Sin tiempo válido.');
                             return;
                         }
 
@@ -3078,7 +3078,7 @@ class EvaluacionJuezService
 
         if ($plantilla === 'tiempo') {
             if ($sinTiempoValido) {
-                $motivo = trim((string) ($payload['motivo_sin_tiempo_valido'] ?? $columnas['observaciones'] ?? 'Sin tiempo valido'));
+                $motivo = trim((string) ($payload['motivo_sin_tiempo_valido'] ?? $columnas['observaciones'] ?? 'Sin tiempo válido'));
 
                 $persistedPayload = [
                     'tiempo' => null,

@@ -1358,12 +1358,12 @@ class ReporteActaService
 
     private function formatearTiempo(float $seconds): string
     {
-        $totalSeconds = max(0, (int) floor($seconds));
-        $hours = intdiv($totalSeconds, 3600);
-        $minutes = intdiv($totalSeconds % 3600, 60);
-        $remainingSeconds = $totalSeconds % 60;
+        $totalCentiseconds = max(0, (int) round($seconds * 100));
+        $minutes = intdiv($totalCentiseconds, 6000);
+        $remainingSeconds = intdiv($totalCentiseconds % 6000, 100);
+        $centiseconds = $totalCentiseconds % 100;
 
-        return sprintf('%02dh %02dm %02ds', $hours, $minutes, $remainingSeconds);
+        return sprintf('%02d:%02d.%02d', $minutes, $remainingSeconds, $centiseconds);
     }
 
     private function formatearFechaHoraReporte(mixed $value): string

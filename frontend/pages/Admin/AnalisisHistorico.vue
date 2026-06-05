@@ -314,6 +314,20 @@ function formatMetric(value, suffix = "") {
   if (value === null || value === undefined) return "-";
   return `${Number(value).toFixed(2)}${suffix}`;
 }
+
+function formatTimeMetric(value) {
+  if (value === null || value === undefined) return "-";
+
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return "-";
+
+  const totalCentiseconds = Math.max(0, Math.round(numericValue * 100));
+  const minutes = Math.floor(totalCentiseconds / 6000);
+  const seconds = Math.floor((totalCentiseconds % 6000) / 100);
+  const centiseconds = totalCentiseconds % 100;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
 </script>
 
 <template>
@@ -646,7 +660,7 @@ function formatMetric(value, suffix = "") {
                 <tr v-for="item in indicadores" :key="item.categoria_id">
                   <td class="px-4 py-3 font-semibold text-slate-900">{{ item.nombre }}</td>
                   <td class="px-4 py-3 text-slate-600">{{ item.resultados_registrados }}</td>
-                  <td class="px-4 py-3 text-slate-600">{{ formatMetric(item.mejor_tiempo, " s") }}</td>
+                  <td class="px-4 py-3 text-slate-600">{{ formatTimeMetric(item.mejor_tiempo) }}</td>
                   <td class="px-4 py-3 text-slate-600">{{ formatMetric(item.mejor_puntaje, " pts") }}</td>
                 </tr>
               </tbody>

@@ -676,14 +676,26 @@ const isTiempoTemplate = computed(() => {
 });
 
 const timeDisplayParts = computed(() => {
-  const padded = String(timeInputDigits.value || "").replace(/\D/g, "").slice(-6).padStart(6, "0");
-
-  return {
-    hours: padded.slice(0, 2),
-    minutes: padded.slice(2, 4),
-    seconds: padded.slice(4, 6),
-  };
+  return durationDisplayParts(digitsToDuration(timeInputDigits.value));
 });
+
+function durationDigitsToCentiseconds(digits) {
+  const padded = String(digits || "").replace(/\D/g, "").slice(-6).padStart(6, "0");
+  const minutes = Number(padded.slice(0, 2));
+  const seconds = Number(padded.slice(2, 4));
+  const centiseconds = Number(padded.slice(4, 6));
+
+  return (minutes * 60 * 100) + (seconds * 100) + centiseconds;
+}
+
+function centisecondsToDuration(totalCentiseconds) {
+  const safeCentiseconds = Math.max(0, Math.round(Number(totalCentiseconds) || 0));
+  const minutes = Math.floor(safeCentiseconds / 6000);
+  const seconds = Math.floor((safeCentiseconds % 6000) / 100);
+  const centiseconds = safeCentiseconds % 100;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
 
 function durationDigitsFromValue(value) {
   if (value === null || value === undefined || value === "") return "";
@@ -693,28 +705,36 @@ function durationDigitsFromValue(value) {
 
   if (/^\d+(?:\.\d+)?$/.test(normalizedNumber)) {
     const seconds = Number(normalizedNumber);
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const rest = Math.floor(seconds % 60);
-    return `${String(hours).padStart(2, "0")}${String(minutes).padStart(2, "0")}${String(rest).padStart(2, "0")}`.replace(/^0+(?=\d)/, "");
+    const totalCentiseconds = Math.max(0, Math.round(seconds * 100));
+    const minutes = Math.floor(totalCentiseconds / 6000);
+    const restCentiseconds = totalCentiseconds % 6000;
+    const secondsPart = Math.floor(restCentiseconds / 100);
+    const centiseconds = restCentiseconds % 100;
+    return `${String(minutes).padStart(2, "0")}${String(secondsPart).padStart(2, "0")}${String(centiseconds).padStart(2, "0")}`.slice(-6).replace(/^0+(?=\d)/, "");
+  }
+
+  const stopwatchMatch = raw.match(/^(\d+):(\d{1,2})(?:[.,](\d{1,3}))?$/);
+
+  if (stopwatchMatch) {
+    const minutes = Number(stopwatchMatch[1]);
+    const seconds = Number(stopwatchMatch[2]);
+    const centiseconds = Number(String(stopwatchMatch[3] || "0").padEnd(2, "0").slice(0, 2));
+    const totalCentiseconds = ((minutes * 60) + seconds) * 100 + centiseconds;
+    return durationDigitsFromValue(totalCentiseconds / 100);
   }
 
   const parts = raw.split(":").map((part) => part.replace(/\D/g, ""));
 
   if (parts.length === 3) {
-    return `${parts[0].padStart(2, "0")}${parts[1].padStart(2, "0")}${parts[2].padStart(2, "0")}`.slice(-6).replace(/^0+(?=\d)/, "");
-  }
-
-  if (parts.length === 2) {
-    return `00${parts[0].padStart(2, "0")}${parts[1].padStart(2, "0")}`.slice(-6).replace(/^0+(?=\d)/, "");
+    const seconds = (Number(parts[0]) * 3600) + (Number(parts[1]) * 60) + Number(parts[2]);
+    return durationDigitsFromValue(seconds);
   }
 
   return raw.replace(/\D/g, "").slice(-6).replace(/^0+(?=\d)/, "");
 }
 
 function digitsToDuration(digits) {
-  const padded = String(digits || "").replace(/\D/g, "").slice(-6).padStart(6, "0");
-  return `${padded.slice(0, 2)}:${padded.slice(2, 4)}:${padded.slice(4, 6)}`;
+  return centisecondsToDuration(durationDigitsToCentiseconds(digits));
 }
 
 function durationValueToSeconds(value) {
@@ -724,6 +744,18 @@ function durationValueToSeconds(value) {
 
   if (/^\d+(?:\.\d+)?$/.test(raw)) {
     return Number(raw);
+  }
+
+  const stopwatchMatch = raw.match(/^(\d+):(\d{1,2})(?:\.(\d{1,3}))?$/);
+
+  if (stopwatchMatch) {
+    const minutes = Number(stopwatchMatch[1]);
+    const seconds = Number(stopwatchMatch[2]);
+    const centiseconds = Number(String(stopwatchMatch[3] || "0").padEnd(2, "0").slice(0, 2));
+
+    if ([minutes, seconds, centiseconds].every(Number.isFinite)) {
+      return (minutes * 60) + seconds + (centiseconds / 100);
+    }
   }
 
   const parts = raw.split(":").map((part) => Number(part));
@@ -742,14 +774,9 @@ function durationValueToSeconds(value) {
 function formatDurationValue(value) {
   const secondsValue = durationValueToSeconds(value);
 
-  if (secondsValue === null) return "00:00:00";
+  if (secondsValue === null) return "00:00.00";
 
-  const totalSeconds = Math.max(0, Math.floor(secondsValue));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return centisecondsToDuration(secondsValue * 100);
 }
 
 function onTimeDigitsInput(event) {
@@ -778,12 +805,13 @@ function onTimeDigitsPaste(event) {
 }
 
 function durationDisplayParts(value) {
-  const padded = durationDigitsFromValue(value).replace(/\D/g, "").slice(-6).padStart(6, "0");
+  const formatted = formatDurationValue(value);
+  const [, minutes = "00", seconds = "00", centiseconds = "00"] = formatted.match(/^(\d+):(\d{2})\.(\d{2})$/) || [];
 
   return {
-    hours: padded.slice(0, 2),
-    minutes: padded.slice(2, 4),
-    seconds: padded.slice(4, 6),
+    minutes,
+    seconds,
+    centiseconds,
   };
 }
 
@@ -3078,7 +3106,7 @@ onBeforeUnmount(() => {
 
               <div class="px-5 py-6 sm:px-6">
                 <div class="mb-4 flex items-center justify-between gap-3 text-sm">
-                  <span class="font-semibold text-slate-200">Cronometro digital</span>
+                  <span class="font-semibold text-slate-200">Cronómetro digital</span>
                   <span class="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-slate-200 ring-1 ring-white/15">
                     Tiempo final
                   </span>
@@ -3086,19 +3114,12 @@ onBeforeUnmount(() => {
 
                 <label class="block cursor-text">
                   <div class="chrono-display rounded-2xl border border-white/10 bg-[#101010] px-4 py-6 text-slate-100 sm:px-6">
-                    <div class="flex items-end justify-center gap-4 sm:gap-8">
-                      <div class="flex items-end gap-1">
-                        <span class="chrono-number">{{ timeDisplayParts.hours }}</span>
-                        <span class="chrono-unit">h</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="chrono-number">{{ timeDisplayParts.minutes }}</span>
-                        <span class="chrono-unit">m</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="chrono-number">{{ timeDisplayParts.seconds }}</span>
-                        <span class="chrono-unit">s</span>
-                      </div>
+                    <div class="flex items-baseline justify-center gap-1 sm:gap-2">
+                      <span class="chrono-number">{{ timeDisplayParts.minutes }}</span>
+                      <span class="chrono-separator">:</span>
+                      <span class="chrono-number">{{ timeDisplayParts.seconds }}</span>
+                      <span class="chrono-separator">.</span>
+                      <span class="chrono-number">{{ timeDisplayParts.centiseconds }}</span>
                     </div>
                   </div>
 
@@ -3109,7 +3130,7 @@ onBeforeUnmount(() => {
                     pattern="[0-9]*"
                     maxlength="6"
                     class="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-center text-sm font-semibold text-slate-100 outline-none transition placeholder:text-slate-500 focus:border-slate-400 focus:ring-2 focus:ring-slate-400/20"
-                    placeholder="Digite solo números. Ej: 735 = 00h 07m 35s"
+                    placeholder="Digite solo números. Ej: 12543 = 01:25.43"
                     @beforeinput="blockNonNumericInput"
                     @input="onTimeDigitsInput"
                     @paste="onTimeDigitsPaste"
@@ -3118,10 +3139,10 @@ onBeforeUnmount(() => {
 
                 <div class="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-300 sm:grid-cols-2">
                   <div class="rounded-xl bg-white/5 px-3 py-2 ring-1 ring-white/10">
-                    Se completa de derecha a izquierda: HH MM SS.
+                    Se completa de derecha a izquierda: MM SS CC.
                   </div>
                   <div class="rounded-xl bg-white/5 px-3 py-2 ring-1 ring-white/10">
-                    Ejemplo: 735 se guarda como 00:07:35.
+                    Ejemplo: 12543 se guarda como 01:25.43.
                   </div>
                 </div>
 
@@ -3168,19 +3189,12 @@ onBeforeUnmount(() => {
                   class="block cursor-text"
                 >
                   <div class="rounded-xl border border-slate-900 bg-[#080808] px-3 py-2 text-white shadow-sm">
-                    <div class="flex items-end justify-center gap-2">
-                      <div class="flex items-end gap-1">
-                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).hours }}</span>
-                        <span class="-mb-0.5 text-sm font-black leading-none">h</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).minutes }}</span>
-                        <span class="-mb-0.5 text-sm font-black leading-none">m</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).seconds }}</span>
-                        <span class="-mb-0.5 text-sm font-black leading-none">s</span>
-                      </div>
+                    <div class="flex items-baseline justify-center gap-1 font-mono text-white">
+                      <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).minutes }}</span>
+                      <span class="text-3xl font-black leading-none">:</span>
+                      <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).seconds }}</span>
+                      <span class="text-3xl font-black leading-none">.</span>
+                      <span class="text-4xl font-black leading-none tracking-normal">{{ durationDisplayParts(currentFieldValues[field.key]).centiseconds }}</span>
                     </div>
                   </div>
 
@@ -3191,7 +3205,7 @@ onBeforeUnmount(() => {
                     pattern="[0-9]*"
                     maxlength="6"
                     class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-center text-xs font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20"
-                    placeholder="Ej: 145 = 00h 01m 45s"
+                    placeholder="Ej: 12543 = 01:25.43"
                     @beforeinput="blockNonNumericInput"
                     @input="onDurationDigitsInput($event, field.key)"
                     @paste="onDurationDigitsPaste($event, field.key)"
@@ -3616,21 +3630,22 @@ onBeforeUnmount(() => {
 }
 
 .chrono-number {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: clamp(4rem, 14vw, 8.5rem);
+  font-family: "Courier New", Consolas, monospace;
+  font-size: clamp(2.6rem, 9vw, 7rem);
   font-weight: 800;
   line-height: 0.9;
-  letter-spacing: 0;
+  letter-spacing: -0.07em;
   color: #f2f2f2;
+  font-variant-numeric: tabular-nums;
 }
 
-.chrono-unit {
-  margin-bottom: 0.1em;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: clamp(1.8rem, 5vw, 3.2rem);
+.chrono-separator {
+  font-family: "Courier New", Consolas, monospace;
+  font-size: clamp(2.1rem, 7vw, 5.2rem);
   font-weight: 800;
-  line-height: 1;
+  line-height: 0.9;
   color: #f2f2f2;
+  font-variant-numeric: tabular-nums;
 }
 </style>
 

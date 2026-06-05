@@ -216,7 +216,7 @@ class ResultadoController extends Controller
             'observaciones' => ['nullable', 'string'],
             'motivo_cambio' => ['required', 'string', 'max:255'],
         ], [
-            'motivo_cambio.required' => 'Ingresa el motivo de correccion.',
+            'motivo_cambio.required' => 'Ingresa el motivo de corrección.',
             'payload.required' => 'No se recibieron los campos del resultado.',
         ]);
 
@@ -231,7 +231,7 @@ class ResultadoController extends Controller
         );
 
         return response()->json([
-            'message' => 'Evaluacion corregida correctamente.',
+            'message' => 'Evaluación corregida correctamente.',
             'resultado' => $this->serializarEvaluacion($actualizado->fresh([
                 'categoria.configCalificacion.mecanismo',
                 'competencia:id,nombre',
@@ -339,7 +339,11 @@ class ResultadoController extends Controller
         }
 
         if (in_array($type, ['checkbox', 'boolean'], true)) {
-            return filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'Si' : 'No';
+            return filter_var($value, FILTER_VALIDATE_BOOLEAN) ? 'Sí' : 'No';
+        }
+
+        if ($type === 'duration') {
+            return $this->formatearTiempoDesdeSegundos($value);
         }
 
         if (is_float($value) || is_int($value)) {
@@ -393,11 +397,11 @@ class ResultadoController extends Controller
             return 'Sin tiempo';
         }
 
-        $totalSeconds = max(0, (int) floor((float) $value));
-        $hours = intdiv($totalSeconds, 3600);
-        $minutes = intdiv($totalSeconds % 3600, 60);
-        $seconds = $totalSeconds % 60;
+        $totalCentiseconds = max(0, (int) round((float) $value * 100));
+        $minutes = intdiv($totalCentiseconds, 6000);
+        $seconds = intdiv($totalCentiseconds % 6000, 100);
+        $centiseconds = $totalCentiseconds % 100;
 
-        return sprintf('%02dh %02dm %02ds', $hours, $minutes, $seconds);
+        return sprintf('%02d:%02d.%02d', $minutes, $seconds, $centiseconds);
     }
 }

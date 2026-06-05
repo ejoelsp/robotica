@@ -51,7 +51,7 @@ const modalidadOptions = [
 const resultadoTemplateOptions = [
   {
     value: "tiempo",
-    label: "Tiempo / cronometro",
+    label: "Tiempo / cronómetro",
     description: "Para categorías donde gana el menor tiempo.",
   },
   {
@@ -963,9 +963,9 @@ async function saveFormato(cat) {
                   <p class="text-xs text-slate-500">
                     {{
                       isMarcadorFormato(formatoForms[activeFormatoCategory.id])
-                        ? "Vista previa del marcador que vera el juez."
+                        ? "Vista previa del marcador que verá el juez."
                         : isTiempoFormato(formatoForms[activeFormatoCategory.id])
-                          ? "Vista previa del cronometro que vera el juez."
+                          ? "Vista previa del cronómetro que verá el juez."
                           : "Ajusta la tabla cuando el tipo sea Tabla de evaluación."
                     }}
                   </p>
@@ -1031,39 +1031,32 @@ async function saveFormato(cat) {
                 <div class="h-2 bg-blue-600"></div>
                 <div class="px-5 py-6 sm:px-6">
                   <div class="mb-5 flex items-center justify-between gap-3 text-sm">
-                    <span class="font-semibold text-slate-100">Cronometro digital</span>
+                    <span class="font-semibold text-slate-100">Cronómetro digital</span>
                     <span class="rounded-full bg-white/10 px-4 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/15">
                       Tiempo final
                     </span>
                   </div>
 
                   <div class="rounded-2xl border border-white/10 bg-[#101010] px-4 py-8 shadow-[inset_0_0_32px_rgba(255,255,255,0.04)] sm:px-6 sm:py-10">
-                    <div class="flex items-end justify-center gap-2 text-white sm:gap-4">
-                      <div class="flex items-end gap-1">
-                        <span class="text-[4rem] font-black leading-none tracking-normal sm:text-[7rem]">00</span>
-                        <span class="-mb-1 text-4xl font-black leading-none sm:text-6xl">h</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="text-[4rem] font-black leading-none tracking-normal sm:text-[7rem]">00</span>
-                        <span class="-mb-1 text-4xl font-black leading-none sm:text-6xl">m</span>
-                      </div>
-                      <div class="flex items-end gap-1">
-                        <span class="text-[4rem] font-black leading-none tracking-normal sm:text-[7rem]">00</span>
-                        <span class="-mb-1 text-4xl font-black leading-none sm:text-6xl">s</span>
-                      </div>
+                    <div class="flex items-baseline justify-center gap-1 font-mono text-white sm:gap-2">
+                      <span class="text-[3rem] font-black leading-none tracking-[-0.07em] sm:text-[6.5rem]">00</span>
+                      <span class="text-[2.4rem] font-black leading-none sm:text-[5rem]">:</span>
+                      <span class="text-[3rem] font-black leading-none tracking-[-0.07em] sm:text-[6.5rem]">00</span>
+                      <span class="text-[2.4rem] font-black leading-none sm:text-[5rem]">.</span>
+                      <span class="text-[3rem] font-black leading-none tracking-[-0.07em] sm:text-[6.5rem]">00</span>
                     </div>
                   </div>
 
                   <div class="mt-4 rounded-xl border border-blue-500/30 bg-slate-950 px-4 py-3 text-center text-sm font-semibold text-slate-400">
-                    Digite solo números. Ej: 735 = 00h 07m 35s
+                    Digite solo números. Ej: 12543 = 01:25.43
                   </div>
 
                   <div class="mt-4 grid grid-cols-1 gap-3 text-xs text-slate-200 sm:grid-cols-2">
                     <div class="rounded-xl border border-white/10 bg-[#101010] px-4 py-3">
-                      Se completa de derecha a izquierda: HH MM SS.
+                      Se completa de derecha a izquierda: MM SS CC.
                     </div>
                     <div class="rounded-xl border border-white/10 bg-[#101010] px-4 py-3">
-                      Ejemplo: 735 se guarda como 00:07:35.
+                      Ejemplo: 12543 se guarda como 01:25.43.
                     </div>
                   </div>
                 </div>
