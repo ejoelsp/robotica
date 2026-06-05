@@ -6,6 +6,7 @@ import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline';
 const throttleError = ref('');
 const page = usePage();
 const mostrarPassword = ref(false);
+const sessionExpiredMessage = ref('');
 
 const form = useForm({
   email: '',
@@ -13,8 +14,20 @@ const form = useForm({
   remember: false,
 });
 
-// Error general de login (si lo usas desde el backend)
-const loginError = computed(() => page.props.loginError || '');
+if (typeof window !== 'undefined') {
+  const params = new URLSearchParams(window.location.search);
+  const storedMessage = window.sessionStorage.getItem('session-expired-message');
+
+  if (storedMessage) {
+    sessionExpiredMessage.value = storedMessage;
+    window.sessionStorage.removeItem('session-expired-message');
+  } else if (params.get('expired') === '1') {
+    sessionExpiredMessage.value = 'Tu sesión ha expirado por inactividad. Inicia sesión nuevamente.';
+  }
+}
+
+// Error general de login o aviso de sesión expirada.
+const loginError = computed(() => page.props.loginError || sessionExpiredMessage.value || '');
 
 
 // Datos antiguos (old) si los estás usando

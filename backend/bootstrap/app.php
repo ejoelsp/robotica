@@ -18,5 +18,35 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        $mensajeSesionExpirada = 'Tu sesión ha expirado por inactividad. Inicia sesión nuevamente.';
+
+        $exceptions->render(function (\Illuminate\Session\TokenMismatchException $exception, \Illuminate\Http\Request $request) use ($mensajeSesionExpirada) {
+            $esInertia = $request->headers->get('X-Inertia') === 'true';
+
+            if ($request->expectsJson() && ! $esInertia) {
+                return response()->json([
+                    'message' => $mensajeSesionExpirada,
+                    'redirect' => route('login'),
+                ], 419);
+            }
+
+            return redirect()
+                ->guest(route('login'))
+                ->with('loginError', $mensajeSesionExpirada);
+        });
+
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $exception, \Illuminate\Http\Request $request) use ($mensajeSesionExpirada) {
+            $esInertia = $request->headers->get('X-Inertia') === 'true';
+
+            if ($request->expectsJson() && ! $esInertia) {
+                return response()->json([
+                    'message' => $mensajeSesionExpirada,
+                    'redirect' => route('login'),
+                ], 401);
+            }
+
+            return redirect()
+                ->guest(route('login'))
+                ->with('loginError', $mensajeSesionExpirada);
+        });
     })->create();
