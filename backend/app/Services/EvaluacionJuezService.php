@@ -1267,6 +1267,8 @@ class EvaluacionJuezService
 
         $podio = $finalistas->values();
 
+        $tercero = null;
+
         if ($tercerLugar && (string) $tercerLugar->estado === 'cerrada') {
             $clasificacionesTercerLugar = Clasificacion::query()
                 ->where('competencia_id', $competenciaId)
@@ -1279,8 +1281,19 @@ class EvaluacionJuezService
 
             $tercero = $this->resolverGanadorEncuentroEnfrentamiento($tercerLugar, $config, $clasificacionesTercerLugar)
                 ?? $clasificacionesTercerLugar->first();
+        }
 
-            if ($tercero) {
+        $tercero ??= $this->resolverTercerLugarPorLlaveDeTres($final, $competenciaId, $categoriaId, $config);
+
+        if ($tercero) {
+            $terceroInscripcionId = $this->clasificacionInscripcionId($tercero);
+            $yaExisteEnPodio = $podio->contains(
+                fn (Clasificacion $clasificacion) => $terceroInscripcionId > 0
+                    ? $this->clasificacionInscripcionId($clasificacion) === $terceroInscripcionId
+                    : (int) $clasificacion->equipo_id === (int) $tercero->equipo_id
+            );
+
+            if (! $yaExisteEnPodio) {
                 $podio->push($tercero);
             }
         }
@@ -1297,6 +1310,7 @@ class EvaluacionJuezService
                     'competencia_id' => $competenciaId,
                     'categoria_id' => $categoriaId,
                     'equipo_id' => (int) $clasificacion->equipo_id,
+                    'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion) ?: null,
                     'ronda_id' => (int) $final->id,
                     'puntaje_total' => $clasificacion->puntaje_total ?? 0,
                     'tiempo_total' => $clasificacion->tiempo_total,
@@ -1373,6 +1387,7 @@ class EvaluacionJuezService
                     'competencia_id' => $competenciaId,
                     'categoria_id' => $categoriaId,
                     'equipo_id' => (int) $clasificacion->equipo_id,
+                    'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion) ?: null,
                     'ronda_id' => (int) $tercerLugar->id,
                     'puntaje_total' => $clasificacion->puntaje_total ?? 0,
                     'tiempo_total' => $clasificacion->tiempo_total,
@@ -1388,6 +1403,83 @@ class EvaluacionJuezService
         });
 
         event(new ResultadosActualizados($competenciaId, $categoriaId, (int) $tercerLugar->id, 'cerrado', true));
+    }
+
+    private function resolverTercerLugarPorLlaveDeTres(
+        Ronda $final,
+        int $competenciaId,
+        int $categoriaId,
+        ConfigCalificacion $config
+    ): ?Clasificacion {
+        if (! $final->ronda_origen_id) {
+            return null;
+        }
+
+        $origen = Ronda::query()
+            ->whereKey((int) $final->ronda_origen_id)
+            ->where('categoria_id', $categoriaId)
+            ->first();
+
+        if (! $origen || (string) $origen->estado !== 'cerrada') {
+            return null;
+        }
+
+        $sorteoOrigen = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', (int) $origen->id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if (! $sorteoOrigen || (string) $sorteoOrigen->tipo_sorteo !== 'enfrentamiento') {
+            return null;
+        }
+
+        $detalles = $sorteoOrigen->detalles
+            ->filter(fn (SorteoDetalle $detalle) => $this->inscripcionAprobada($detalle->inscripcion))
+            ->unique('inscripcion_id')
+            ->values();
+        $directos = $detalles->filter(fn (SorteoDetalle $detalle) => (string) $detalle->estado === 'directo')->values();
+        $resueltos = $this->resolverResultadosGruposEnfrentamiento($sorteoOrigen, $config);
+
+        if ($detalles->count() !== 3 || $directos->count() !== 1 || $resueltos->count() !== 1) {
+            return null;
+        }
+
+        $perdedor = $resueltos->first()['perdedor'] ?? null;
+
+        if (! $this->inscripcionAprobada($perdedor)) {
+            return null;
+        }
+
+        $finalistas = Sorteo::query()
+            ->with('detalles.inscripcion')
+            ->where('ronda_id', (int) $final->id)
+            ->where('estado', '!=', 'anulado')
+            ->first()
+            ?->detalles
+            ?->pluck('inscripcion_id')
+            ?->map(fn ($id) => (int) $id)
+            ?->filter()
+            ?->values() ?? collect();
+
+        if ($finalistas->contains((int) $perdedor->id)) {
+            return null;
+        }
+
+        return Clasificacion::query()
+            ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
+            ->where('competencia_id', $competenciaId)
+            ->where('categoria_id', $categoriaId)
+            ->where('ronda_id', (int) $origen->id)
+            ->where(function ($query) use ($perdedor) {
+                $query->where('inscripcion_id', (int) $perdedor->id)
+                    ->orWhere(function ($subquery) use ($perdedor) {
+                        $subquery->whereNull('inscripcion_id')
+                            ->where('equipo_id', (int) $perdedor->equipo_id);
+                    });
+            })
+            ->orderBy('posicion')
+            ->first();
     }
 
     private function resolverGanadorEncuentroEnfrentamiento(

@@ -407,6 +407,15 @@ class ClasificacionConsolidacionService
             }
         }
 
+        if (! collect($rows)->contains(fn (array $row) => (int) ($row['posicion'] ?? 0) === 3)) {
+            $estadoBase = (string) ($clasificacionesFinal->first()?->estado_publicacion ?? ($rows[0]['estado_publicacion'] ?? 'cerrado'));
+            $filaTercero = $this->filaTercerLugarPorLlaveDeTres($final, $config, $estadoBase);
+
+            if ($filaTercero && ! collect($rows)->contains(fn (array $row) => (int) ($row['inscripcion_id'] ?? 0) === (int) ($filaTercero['inscripcion_id'] ?? 0))) {
+                $rows[] = $filaTercero;
+            }
+        }
+
         return collect($rows)
             ->sortBy('posicion')
             ->take(3)
@@ -417,6 +426,113 @@ class ClasificacionConsolidacionService
             })
             ->values()
             ->all();
+    }
+
+    private function filaTercerLugarPorLlaveDeTres(
+        Ronda $final,
+        ConfigCalificacion $config,
+        string $estadoPublicacion
+    ): ?array {
+        if (! $final->ronda_origen_id) {
+            return null;
+        }
+
+        $origen = Ronda::query()
+            ->whereKey((int) $final->ronda_origen_id)
+            ->where('categoria_id', (int) $final->categoria_id)
+            ->first();
+
+        if (! $origen || (string) $origen->estado !== 'cerrada') {
+            return null;
+        }
+
+        $sorteoOrigen = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', (int) $origen->id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if (! $sorteoOrigen || (string) $sorteoOrigen->tipo_sorteo !== 'enfrentamiento') {
+            return null;
+        }
+
+        $detalles = $sorteoOrigen->detalles
+            ->filter(fn ($detalle) => $detalle->inscripcion)
+            ->unique('inscripcion_id')
+            ->values();
+        $directos = $detalles->filter(fn ($detalle) => (string) $detalle->estado === 'directo')->values();
+
+        if ($detalles->count() !== 3 || $directos->count() !== 1) {
+            return null;
+        }
+
+        $grupo = $sorteoOrigen->detalles
+            ->filter(fn ($detalle) => $detalle->estado !== 'directo')
+            ->groupBy(fn ($detalle) => $detalle->grupo ?? $detalle->orden)
+            ->first();
+
+        if (! $grupo || $grupo->count() < 2) {
+            return null;
+        }
+
+        $ordenados = $grupo->sortBy('orden')->values();
+        $detalleA = $ordenados->firstWhere('lado', 'A') ?? $ordenados->get(0);
+        $detalleB = $ordenados->firstWhere('lado', 'B') ?? $ordenados->get(1);
+
+        if (! $detalleA?->inscripcion || ! $detalleB?->inscripcion) {
+            return null;
+        }
+
+        $resultado = Resultado::query()
+            ->where('ronda_id', (int) $origen->id)
+            ->whereIn('inscripcion_id', [
+                (int) $detalleA->inscripcion_id,
+                (int) $detalleB->inscripcion_id,
+            ])
+            ->whereIn('estado', ['registrado', 'publicado'])
+            ->latest('updated_at')
+            ->first();
+
+        if (! $resultado) {
+            return null;
+        }
+
+        $valores = $this->valoresResultadoEnfrentamiento($resultado, $config);
+
+        if (! $valores || (float) $valores['a'] === (float) $valores['b']) {
+            return null;
+        }
+
+        $menorValorGana = ! in_array($this->registroTemplate($config), ['marcador', 'tabla_enfrentamiento_criterios'], true)
+            && ($this->registroTemplate($config) === 'tiempo' || (string) $config->orden_ranking === 'asc');
+        $ganaA = $menorValorGana
+            ? (float) $valores['a'] < (float) $valores['b']
+            : (float) $valores['a'] > (float) $valores['b'];
+        $perdedor = $ganaA ? $detalleB : $detalleA;
+        $ladoPerdedor = $ganaA ? 'B' : 'A';
+
+        $finalistas = Sorteo::query()
+            ->with('detalles')
+            ->where('ronda_id', (int) $final->id)
+            ->where('estado', '!=', 'anulado')
+            ->first()
+            ?->detalles
+            ?->pluck('inscripcion_id')
+            ?->map(fn ($id) => (int) $id)
+            ?->filter()
+            ?->values() ?? collect();
+
+        if ($finalistas->contains((int) $perdedor->inscripcion_id)) {
+            return null;
+        }
+
+        return $this->filaPodioDesdeDetalleSorteo(
+            $perdedor,
+            3,
+            'Ronda previa: perdió ' . $this->resultadoDesdePerspectiva($valores, $ladoPerdedor),
+            $estadoPublicacion,
+            'Tercer lugar por llave de 3 participantes'
+        );
     }
 
     private function filaGanadorTercerLugarDesdeSorteo(
