@@ -1218,6 +1218,32 @@ class EvaluacionJuezService
             ]);
         }
 
+        $finalExistente = Ronda::query()
+            ->where('categoria_id', $categoriaId)
+            ->where('es_final', true)
+            ->orderByDesc('orden')
+            ->first()
+            ?? Ronda::query()
+                ->where('categoria_id', $categoriaId)
+                ->orderByDesc('orden')
+                ->first();
+
+        if ($finalExistente) {
+            $vistaCampeonUnico = $this->consolidacionService->consolidarCampeonUnicoEnfrentamiento(
+                $competenciaId,
+                $categoriaId,
+                (int) $finalExistente->id,
+                $juez,
+                'cerrado'
+            );
+
+            if ($vistaCampeonUnico) {
+                $this->marcarCategoriaFinalizadaSiCompleta($categoriaId, $juez);
+
+                return $vistaCampeonUnico;
+            }
+        }
+
         $this->sincronizarTercerLugarEnfrentamiento($categoriaId, $competenciaId, $config, $juez);
         $this->sincronizarPodioFinalEnfrentamiento($categoriaId, $competenciaId, $config, $juez);
 

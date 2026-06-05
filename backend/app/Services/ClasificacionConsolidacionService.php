@@ -111,6 +111,18 @@ class ClasificacionConsolidacionService
         $evaluaciones = $this->obtenerEvaluaciones($ronda->id);
 
         if ($evaluaciones->isEmpty()) {
+            $vistaCampeonUnico = $this->consolidarCampeonUnicoEnfrentamiento(
+                $competenciaId,
+                $categoriaId,
+                $rondaId,
+                $admin,
+                'borrador'
+            );
+
+            if ($vistaCampeonUnico) {
+                return $vistaCampeonUnico;
+            }
+
             throw ValidationException::withMessages([
                 'ronda_id' => 'No hay evaluaciones registradas para consolidar en la ronda seleccionada.',
             ]);
@@ -170,6 +182,18 @@ class ClasificacionConsolidacionService
         $evaluaciones = $this->obtenerEvaluaciones($ronda->id);
 
         if ($evaluaciones->isEmpty()) {
+            $vistaCampeonUnico = $this->consolidarCampeonUnicoEnfrentamiento(
+                $competenciaId,
+                $categoriaId,
+                $rondaId,
+                $actor,
+                $estadoPublicacion
+            );
+
+            if ($vistaCampeonUnico) {
+                return $vistaCampeonUnico;
+            }
+
             throw ValidationException::withMessages([
                 'ronda_id' => 'No hay evaluaciones registradas para consolidar en la ronda seleccionada.',
             ]);
@@ -253,6 +277,18 @@ class ClasificacionConsolidacionService
             ->get();
 
         if ($clasificaciones->isEmpty()) {
+            $vistaCampeonUnico = $this->consolidarCampeonUnicoEnfrentamiento(
+                $competenciaId,
+                $categoriaId,
+                $rondaId,
+                $admin,
+                $estado
+            );
+
+            if ($vistaCampeonUnico) {
+                return $vistaCampeonUnico;
+            }
+
             throw ValidationException::withMessages([
                 'ronda_id' => 'No existen clasificaciones consolidadas para actualizar su publicación.',
             ]);
@@ -290,6 +326,92 @@ class ClasificacionConsolidacionService
             (int) $ronda->id,
             $estado,
             $estado === 'cerrado'
+        ));
+
+        return $this->obtenerVista($competenciaId, $categoria->id, $ronda->id);
+    }
+
+    public function consolidarCampeonUnicoEnfrentamiento(
+        int $competenciaId,
+        int $categoriaId,
+        int $rondaId,
+        User $actor,
+        string $estadoPublicacion = 'cerrado'
+    ): ?array {
+        if (! in_array($estadoPublicacion, ['borrador', 'visible', 'cerrado'], true)) {
+            $estadoPublicacion = 'cerrado';
+        }
+
+        [$categoria, $ronda, $config] = $this->resolverScope($competenciaId, $categoriaId, $rondaId);
+        $filas = $this->construirFilasCampeonUnicoEnfrentamiento($categoria, $ronda, $config);
+
+        if (empty($filas)) {
+            return null;
+        }
+
+        DB::transaction(function () use ($competenciaId, $categoria, $ronda, $filas, $estadoPublicacion, $actor) {
+            $estadosAnteriores = Clasificacion::query()
+                ->where('competencia_id', $competenciaId)
+                ->where('categoria_id', $categoria->id)
+                ->where('ronda_id', $ronda->id)
+                ->pluck('estado_publicacion')
+                ->filter()
+                ->unique()
+                ->values()
+                ->all();
+
+            Clasificacion::query()
+                ->where('competencia_id', $competenciaId)
+                ->where('categoria_id', $categoria->id)
+                ->where('ronda_id', $ronda->id)
+                ->delete();
+
+            $ronda->update([
+                'tipo' => 'final',
+                'nombre' => 'Final',
+                'criterio_clasificacion' => 'ganador_enfrentamiento',
+                'es_final' => true,
+                'estado' => $estadoPublicacion === 'cerrado' ? 'cerrada' : $ronda->estado,
+            ]);
+
+            $clasificaciones = collect();
+
+            foreach ($filas as $index => $fila) {
+                $clasificaciones->push(Clasificacion::create([
+                    'competencia_id' => $competenciaId,
+                    'categoria_id' => $categoria->id,
+                    'equipo_id' => $fila['equipo_id'],
+                    'inscripcion_id' => $fila['inscripcion_id'] ?? null,
+                    'ronda_id' => $ronda->id,
+                    'puntaje_total' => $fila['puntaje_total'] ?? 0,
+                    'tiempo_total' => $fila['tiempo_total'],
+                    'penal_total' => $fila['penal_total'] ?? 0,
+                    'posicion' => $index + 1,
+                    'estado_publicacion' => $estadoPublicacion,
+                    'publicado_at' => $estadoPublicacion === 'borrador' ? null : now(),
+                    'publicado_por' => $estadoPublicacion === 'borrador' ? null : $actor->id,
+                    'origen_version' => $fila['origen_version'],
+                    'detalle_json' => $fila['detalle_json'],
+                ]));
+            }
+
+            $this->registrarHistorialPublicacion(
+                $competenciaId,
+                (int) $categoria->id,
+                (int) $ronda->id,
+                $clasificaciones,
+                $estadoPublicacion,
+                $estadosAnteriores,
+                $actor
+            );
+        });
+
+        $this->emitirResultadosActualizados(new ResultadosActualizados(
+            $competenciaId,
+            (int) $categoria->id,
+            (int) $ronda->id,
+            $estadoPublicacion,
+            $estadoPublicacion === 'cerrado'
         ));
 
         return $this->obtenerVista($competenciaId, $categoria->id, $ronda->id);
@@ -1030,6 +1152,23 @@ class ClasificacionConsolidacionService
         int $posicion,
         string $nota = ''
     ): array {
+        if ($this->clasificacionCampeonUnico($clasificacion)) {
+            $nota = $nota !== '' ? $nota : 'Campeón';
+
+            return [
+                'inscripcion_id' => $this->clasificacionInscripcionId($clasificacion),
+                'equipo_id' => (int) $clasificacion->equipo_id,
+                'posicion' => $posicion,
+                'equipo_nombre' => $this->nombreParticipanteDesdeClasificacion($clasificacion),
+                'institucion' => (string) ($clasificacion->equipo?->institucion ?? ''),
+                'resultado_label' => 'Campeón',
+                'resultado_valor' => null,
+                'puntaje_total' => $clasificacion->puntaje_total,
+                'estado_publicacion' => (string) $clasificacion->estado_publicacion,
+                'nota' => $nota,
+            ];
+        }
+
         if ($nota === '' && $posicion === 3 && $this->clasificacionUsaEnfrentamiento($config)) {
             $nota = 'Ganador del tercer lugar';
         }
@@ -1415,6 +1554,115 @@ class ClasificacionConsolidacionService
             ?: $this->compararFilas($left, $right, $mecanismo, $config->orden_ranking));
 
         return $filas;
+    }
+
+    private function construirFilasCampeonUnicoEnfrentamiento(
+        Categoria $categoria,
+        Ronda $ronda,
+        ConfigCalificacion $config
+    ): array {
+        if (! $this->configUsaModalidadEnfrentamiento($config)) {
+            return [];
+        }
+
+        $inscripcion = $this->inscripcionCampeonUnicoEnfrentamiento($categoria, $ronda);
+
+        if (! $inscripcion) {
+            return [];
+        }
+
+        return [[
+            'equipo_id' => (int) $inscripcion->equipo_id,
+            'inscripcion_id' => (int) $inscripcion->id,
+            'equipo_nombre' => (string) ($inscripcion->equipo?->nombre ?? ''),
+            'nombre_prototipo' => (string) ($inscripcion->nombre_prototipo ?? ''),
+            'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
+            'puntaje_total' => 0,
+            'tiempo_total' => null,
+            'penal_total' => 0,
+            'metric_primary' => null,
+            'metric_secondary' => null,
+            'origen_version' => 0,
+            'detalle_json' => [
+                'mecanismo_codigo' => (string) ($config->mecanismo?->codigo ?? ''),
+                'orden_ranking' => $config->orden_ranking,
+                'unidad_resultado' => $config->unidad_resultado,
+                'resumen' => [
+                    'campeon_unico' => true,
+                    'evaluaciones_count' => 0,
+                    'puntaje_total' => 0,
+                    'tiempo_total' => null,
+                    'penal_total' => 0,
+                    'metric_primary' => null,
+                    'metric_secondary' => null,
+                ],
+                'evaluaciones' => [[
+                    'resultado_id' => null,
+                    'inscripcion_id' => (int) $inscripcion->id,
+                    'equipo_id' => (int) $inscripcion->equipo_id,
+                    'intento_numero' => 1,
+                    'juez_user_id' => null,
+                    'juez_nombre' => null,
+                    'puntaje' => null,
+                    'tiempo' => null,
+                    'penalizaciones' => null,
+                    'valor_principal' => null,
+                    'valor_secundario' => null,
+                    'payload_json' => [
+                        'campeon_unico' => true,
+                    ],
+                    'observaciones' => 'Campeón',
+                    'version' => 0,
+                    'updated_at' => now()->toIso8601String(),
+                ]],
+            ],
+        ]];
+    }
+
+    private function inscripcionCampeonUnicoEnfrentamiento(Categoria $categoria, Ronda $ronda): ?Inscripcion
+    {
+        $sorteo = Sorteo::query()
+            ->with('detalles.inscripcion.equipo')
+            ->where('ronda_id', (int) $ronda->id)
+            ->where('estado', '!=', 'anulado')
+            ->first();
+
+        if ($sorteo && (string) $sorteo->tipo_sorteo !== 'enfrentamiento') {
+            return null;
+        }
+
+        $detalles = $sorteo?->detalles
+            ?->filter(fn ($detalle) => $this->inscripcionAprobada($detalle->inscripcion))
+            ?->unique('inscripcion_id')
+            ?->values() ?? collect();
+
+        if ($detalles->count() === 1) {
+            $detalle = $detalles->first();
+            $esPaseDirecto = (string) ($detalle->estado ?? '') === 'directo'
+                || $detalle->grupo === null;
+
+            return $esPaseDirecto ? $detalle->inscripcion : null;
+        }
+
+        if ($sorteo && $detalles->count() !== 1) {
+            return null;
+        }
+
+        $inscripciones = Inscripcion::query()
+            ->with('equipo')
+            ->where('competencia_id', (int) $categoria->competencia_id)
+            ->where('categoria_id', (int) $categoria->id)
+            ->aprobadas()
+            ->get();
+
+        return $inscripciones->count() === 1 ? $inscripciones->first() : null;
+    }
+
+    private function inscripcionAprobada(?Inscripcion $inscripcion): bool
+    {
+        return $inscripcion
+            && (string) $inscripcion->estado === 'confirmado'
+            && (string) $inscripcion->estado_comprobante === 'aprobado';
     }
 
     private function obtenerClasificaciones(int $competenciaId, int $categoriaId, int $rondaId, ConfigCalificacion $config): array
@@ -1833,6 +2081,10 @@ class ClasificacionConsolidacionService
         $detalle = $clasificacion->detalle_json['resumen'] ?? [];
         $plantilla = $this->registroTemplate($config);
 
+        if ($this->clasificacionCampeonUnico($clasificacion)) {
+            return 'Campeón';
+        }
+
         if ($this->clasificacionNoParticipa($clasificacion)) {
             return 'Sin tiempo válido';
         }
@@ -2200,6 +2452,10 @@ class ClasificacionConsolidacionService
 
     private function formatearResultadoEnfrentamiento(Clasificacion $clasificacion, ConfigCalificacion $config): string
     {
+        if ($this->clasificacionCampeonUnico($clasificacion)) {
+            return 'Campeón';
+        }
+
         $payload = $clasificacion->detalle_json['evaluaciones'][0]['payload_json'] ?? [];
 
         if (isset($payload['marcador_equipo_a'], $payload['marcador_equipo_b'])) {
@@ -2563,6 +2819,14 @@ class ClasificacionConsolidacionService
             || in_array($plantilla, ['marcador', 'tabla_enfrentamiento_criterios'], true);
     }
 
+    private function configUsaModalidadEnfrentamiento(ConfigCalificacion $config): bool
+    {
+        $registro = $config->reglas_json['registro'] ?? [];
+
+        return is_array($registro)
+            && ($registro['modalidad_competencia'] ?? null) === 'enfrentamiento_directo';
+    }
+
     private function clasificacionNoParticipa(Clasificacion $clasificacion): bool
     {
         $evaluaciones = collect($clasificacion->detalle_json['evaluaciones'] ?? []);
@@ -2572,8 +2836,19 @@ class ClasificacionConsolidacionService
                 || (bool) ($evaluacion['payload_json']['no_participa'] ?? false));
     }
 
+    private function clasificacionCampeonUnico(Clasificacion $clasificacion): bool
+    {
+        $detalle = is_array($clasificacion->detalle_json) ? $clasificacion->detalle_json : [];
+
+        return (bool) ($detalle['resumen']['campeon_unico'] ?? false);
+    }
+
     private function formatearPuntajeClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config): string
     {
+        if ($this->clasificacionCampeonUnico($clasificacion)) {
+            return 'Campeón';
+        }
+
         if ($this->clasificacionNoParticipa($clasificacion)) {
             return 'Sin tiempo válido';
         }
