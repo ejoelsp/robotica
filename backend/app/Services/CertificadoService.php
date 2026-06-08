@@ -15,6 +15,11 @@ class CertificadoService
     private const PAGE_WIDTH = 842.0;
     private const PAGE_HEIGHT = 595.0;
 
+    public function __construct(
+        private readonly ClasificacionConsolidacionService $clasificacionService
+    ) {
+    }
+
     public function tiposCertificados(): array
     {
         return [
@@ -99,7 +104,8 @@ class CertificadoService
         ?string $tipoSolicitado = null
     ): CertificadoGenerado {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
-        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion);
+        $podioOficial = $this->clasificacionService->resolverPodioOficialInscripcion($inscripcion);
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $podioOficial);
 
         if ($tiposDisponibles === []) {
             throw ValidationException::withMessages([
@@ -256,13 +262,17 @@ class CertificadoService
     private function serializarCertificadosInscripcion(Inscripcion $inscripcion)
     {
         $clasificacion = $this->clasificacionPublicada($inscripcion);
-        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion);
+        $podioOficial = $this->clasificacionService->resolverPodioOficialInscripcion($inscripcion);
+        $tiposDisponibles = $this->tiposDisponiblesParaInscripcion($clasificacion, $podioOficial);
 
         return $inscripcion->integrantes
             ->sortByDesc(fn (InscripcionIntegrante $integrante) => (bool) $integrante->es_capitan)
-            ->flatMap(function (InscripcionIntegrante $integrante) use ($inscripcion, $clasificacion, $tiposDisponibles) {
-                return collect($tiposDisponibles)->map(function (string $tipo) use ($integrante, $inscripcion, $clasificacion) {
+            ->flatMap(function (InscripcionIntegrante $integrante) use ($inscripcion, $clasificacion, $podioOficial, $tiposDisponibles) {
+                return collect($tiposDisponibles)->map(function (string $tipo) use ($integrante, $inscripcion, $clasificacion, $podioOficial) {
                     $plantilla = $this->plantillaActiva($inscripcion, $tipo);
+                    $posicion = $podioOficial['posicion'] ?? ($clasificacion
+                        ? $this->posicionPodioCertificado($clasificacion, $this->esRondaDePodio($clasificacion))
+                        : null);
 
                     return [
                         'id' => sprintf('%d-%s', $integrante->id, $tipo),
@@ -273,9 +283,9 @@ class CertificadoService
                         'equipo' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
                         'prototipo' => (string) ($inscripcion->nombre_prototipo ?? 'Sin prototipo'),
                         'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
-                        'posicion' => $tipo === 'participacion' || ! $clasificacion
+                        'posicion' => $tipo === 'participacion'
                             ? null
-                            : $this->posicionPodioCertificado($clasificacion, $this->esRondaDePodio($clasificacion)),
+                            : $posicion,
                         'tipo_certificado' => $tipo,
                         'tipo_label' => $this->tiposCertificados()[$tipo] ?? $tipo,
                         'disponible' => $plantilla !== null,
@@ -333,12 +343,16 @@ class CertificadoService
         };
     }
 
-    private function tiposDisponiblesParaInscripcion(?Clasificacion $clasificacion): array
+    private function tiposDisponiblesParaInscripcion(?Clasificacion $clasificacion, ?array $podioOficial = null): array
     {
         $tipos = ['participacion'];
+        $posicionPodio = $podioOficial['posicion'] ?? null;
 
-        if ($clasificacion) {
+        if ($posicionPodio === null && $clasificacion) {
             $posicionPodio = $this->posicionPodioCertificado($clasificacion, $this->esRondaDePodio($clasificacion));
+        }
+
+        if ($posicionPodio !== null) {
             $tipoPodio = $posicionPodio ? $this->tipoPodioPorPosicion($posicionPodio) : null;
             if ($tipoPodio) {
                 $tipos[] = $tipoPodio;

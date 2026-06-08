@@ -63,6 +63,41 @@ class ClasificacionConsolidacionService
         ];
     }
 
+    public function resolverPodioOficialInscripcion(Inscripcion $inscripcion): ?array
+    {
+        if (! $inscripcion->id || ! $inscripcion->competencia_id || ! $inscripcion->categoria_id) {
+            return null;
+        }
+
+        try {
+            $vista = $this->obtenerVistaPublica(
+                (int) $inscripcion->competencia_id,
+                (int) $inscripcion->categoria_id,
+                null
+            );
+        } catch (ValidationException) {
+            return null;
+        }
+
+        $row = collect($vista['rows'] ?? [])
+            ->first(fn (array $item) => (int) ($item['inscripcion_id'] ?? 0) === (int) $inscripcion->id);
+
+        if (! $row) {
+            return null;
+        }
+
+        return [
+            'competencia_id' => (int) ($vista['scope']['competencia_id'] ?? $inscripcion->competencia_id),
+            'categoria_id' => (int) ($vista['scope']['categoria_id'] ?? $inscripcion->categoria_id),
+            'ronda_id' => (int) ($vista['scope']['ronda_id'] ?? 0),
+            'ronda_nombre' => (string) ($vista['scope']['ronda_nombre'] ?? 'Ronda'),
+            'categoria_nombre' => (string) ($vista['scope']['categoria_nombre'] ?? $inscripcion->categoria?->nombre ?? 'Categoría'),
+            'estado_publicacion' => (string) ($row['estado_publicacion'] ?? ($vista['scope']['estado_publicacion'] ?? 'cerrado')),
+            'publicado_at' => $vista['summary']['updated_at'] ?? null,
+            'updated_at' => $vista['summary']['updated_at'] ?? null,
+        ] + $row;
+    }
+
     public function obtenerVista(int $competenciaId, ?int $categoriaId = null, ?int $rondaId = null): array
     {
         [$categoria, $ronda, $config] = $this->resolverScope($competenciaId, $categoriaId, $rondaId);
@@ -496,7 +531,7 @@ class ClasificacionConsolidacionService
             ->orderByDesc('id')
             ->first();
 
-        if ($tercerLugar) {
+        if ($tercerLugar && ! $this->esRondaTecnicaTercerLugarSinResultados($tercerLugar)) {
             $clasificacionesTercerLugar = Clasificacion::query()
                 ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                 ->where('competencia_id', $competenciaId)
@@ -1226,6 +1261,10 @@ class ClasificacionConsolidacionService
             }
 
             foreach ($categoria->rondas->sortBy('orden') as $ronda) {
+                if ($this->esRondaTecnicaTercerLugarSinResultados($ronda)) {
+                    continue;
+                }
+
                 $clasificaciones = Clasificacion::query()
                     ->with(['equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                     ->where('competencia_id', $competenciaId)
@@ -1969,10 +2008,11 @@ class ClasificacionConsolidacionService
     {
         $config = $inscripcion->categoria?->configCalificacion;
         $clasificaciones = collect();
+        $podioOficial = null;
 
         if ($config && $inscripcion->id) {
             $clasificaciones = Clasificacion::query()
-                ->with(['ronda:id,nombre,orden,es_final', 'equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
+                ->with(['ronda:id,nombre,tipo,orden,es_final', 'equipo:id,nombre,institucion', 'inscripcion:id,equipo_id,nombre_prototipo'])
                 ->where('competencia_id', $inscripcion->competencia_id)
                 ->where('categoria_id', $inscripcion->categoria_id)
                 ->where(function ($query) use ($inscripcion) {
@@ -1981,12 +2021,15 @@ class ClasificacionConsolidacionService
                 })
                 ->whereIn('estado_publicacion', ['visible', 'cerrado'])
                 ->get()
+                ->reject(fn (Clasificacion $clasificacion) => $this->esRondaTecnicaTercerLugarSinResultados($clasificacion->ronda))
                 ->sortBy(fn (Clasificacion $clasificacion) => [
                     (bool) ($clasificacion->ronda?->es_final ?? false) ? 1 : 0,
                     (int) ($clasificacion->ronda?->orden ?? 0),
                     (int) $clasificacion->id,
                 ])
                 ->values();
+
+            $podioOficial = $this->resolverPodioOficialInscripcion($inscripcion);
         }
 
         $destacado = $clasificaciones
@@ -2012,34 +2055,15 @@ class ClasificacionConsolidacionService
             ->whereIn('estado', ['registrado', 'publicado'])
             ->exists();
 
-        $estadoResultado = $destacado
+        $estadoResultado = $podioOficial
             ? 'publicado'
-            : ($exclusion ? 'no_clasificado' : ($evaluacionesRegistradas ? 'pendiente_publicacion' : 'pendiente'));
+            : ($destacado
+            ? 'publicado'
+            : ($exclusion ? 'no_clasificado' : ($evaluacionesRegistradas ? 'pendiente_publicacion' : 'pendiente')));
 
-        return [
-            'inscripcion_id' => (int) $inscripcion->id,
-            'competencia_id' => (int) $inscripcion->competencia_id,
-            'competencia_nombre' => (string) ($inscripcion->competencia?->nombre ?? 'Competencia'),
-            'categoria_id' => (int) $inscripcion->categoria_id,
-            'categoria_nombre' => (string) ($inscripcion->categoria?->nombre ?? 'Categoria'),
-            'equipo_id' => (int) ($inscripcion->equipo_id ?? 0),
-            'equipo_nombre' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
-            'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
-            'nombre_prototipo' => $inscripcion->nombre_prototipo,
-            'estado_inscripcion' => (string) $inscripcion->estado,
-            'estado_resultado' => $estadoResultado,
-            'estado_publicacion' => $destacado ? (string) $destacado->estado_publicacion : null,
-            'resultado_label' => $destacado && $config
-                ? $this->formatearResultadoClasificacion($destacado, $config)
-                : ($exclusion ? 'No clasificado' : null),
-            'posicion' => $destacado ? (int) $destacado->posicion : null,
-            'ronda_nombre' => $destacado
-                ? (string) ($destacado->ronda?->nombre ?? 'Ronda')
-                : ($exclusion ? (string) ($exclusion->ronda?->nombre ?? 'Ronda') : null),
-            'es_podio' => $destacado ? (int) $destacado->posicion <= 3 : false,
-            'publicado_at' => optional($destacado?->publicado_at)->toIso8601String(),
-            'updated_at' => optional($destacado?->updated_at)->toIso8601String(),
-            'resultados' => $clasificaciones
+        $resultados = $podioOficial
+            ? [$this->serializarPodioCompetidor($podioOficial)]
+            : $clasificaciones
                 ->map(fn (Clasificacion $clasificacion) => [
                     'id' => (int) $clasificacion->id,
                     'ronda_id' => (int) $clasificacion->ronda_id,
@@ -2070,8 +2094,70 @@ class ClasificacionConsolidacionService
                         'estado_resultado' => 'no_clasificado',
                     ]);
                 })
-                ->all(),
+                ->all();
+
+        return [
+            'inscripcion_id' => (int) $inscripcion->id,
+            'competencia_id' => (int) $inscripcion->competencia_id,
+            'competencia_nombre' => (string) ($inscripcion->competencia?->nombre ?? 'Competencia'),
+            'categoria_id' => (int) $inscripcion->categoria_id,
+            'categoria_nombre' => (string) ($inscripcion->categoria?->nombre ?? 'Categoria'),
+            'equipo_id' => (int) ($inscripcion->equipo_id ?? 0),
+            'equipo_nombre' => (string) ($inscripcion->equipo?->nombre ?? 'Sin equipo'),
+            'institucion' => (string) ($inscripcion->equipo?->institucion ?? ''),
+            'nombre_prototipo' => $inscripcion->nombre_prototipo,
+            'estado_inscripcion' => (string) $inscripcion->estado,
+            'estado_resultado' => $estadoResultado,
+            'estado_publicacion' => $podioOficial
+                ? (string) ($podioOficial['estado_publicacion'] ?? 'cerrado')
+                : ($destacado ? (string) $destacado->estado_publicacion : null),
+            'resultado_label' => $podioOficial
+                ? (string) ($podioOficial['resultado_label'] ?? 'Resultado publicado')
+                : ($destacado && $config
+                    ? $this->formatearResultadoClasificacion($destacado, $config)
+                    : ($exclusion ? 'No clasificado' : null)),
+            'posicion' => $podioOficial
+                ? (int) ($podioOficial['posicion'] ?? 0)
+                : ($destacado ? (int) $destacado->posicion : null),
+            'ronda_nombre' => $podioOficial
+                ? (string) ($podioOficial['ronda_nombre'] ?? 'Ronda')
+                : ($destacado
+                    ? (string) ($destacado->ronda?->nombre ?? 'Ronda')
+                    : ($exclusion ? (string) ($exclusion->ronda?->nombre ?? 'Ronda') : null)),
+            'es_podio' => $podioOficial ? true : ($destacado ? (int) $destacado->posicion <= 3 : false),
+            'publicado_at' => $podioOficial['publicado_at'] ?? optional($destacado?->publicado_at)->toIso8601String(),
+            'updated_at' => $podioOficial['updated_at'] ?? optional($destacado?->updated_at)->toIso8601String(),
+            'resultados' => $resultados,
         ];
+    }
+
+    private function serializarPodioCompetidor(array $podio): array
+    {
+        return [
+            'id' => 'podio-' . (int) ($podio['categoria_id'] ?? 0) . '-' . (int) ($podio['inscripcion_id'] ?? 0),
+            'ronda_id' => (int) ($podio['ronda_id'] ?? 0),
+            'ronda_nombre' => (string) ($podio['ronda_nombre'] ?? 'Ronda'),
+            'posicion' => (int) ($podio['posicion'] ?? 0),
+            'resultado_label' => (string) ($podio['resultado_label'] ?? 'Resultado publicado'),
+            'puntaje_total' => $podio['puntaje_total'] ?? null,
+            'tiempo_total' => $podio['tiempo_total'] ?? null,
+            'penal_total' => $podio['penal_total'] ?? null,
+            'estado_publicacion' => (string) ($podio['estado_publicacion'] ?? 'cerrado'),
+            'publicado_at' => $podio['publicado_at'] ?? null,
+            'updated_at' => $podio['updated_at'] ?? null,
+        ];
+    }
+
+    private function esRondaTecnicaTercerLugarSinResultados(?Ronda $ronda): bool
+    {
+        if (! $ronda || (string) ($ronda->tipo ?? '') !== 'tercer_lugar') {
+            return false;
+        }
+
+        return ! Resultado::query()
+            ->where('ronda_id', (int) $ronda->id)
+            ->whereIn('estado', ['registrado', 'publicado'])
+            ->exists();
     }
 
     private function formatearResultadoClasificacion(Clasificacion $clasificacion, ConfigCalificacion $config): string
@@ -2391,7 +2477,7 @@ class ClasificacionConsolidacionService
             ])->values()->all();
         }
 
-        $clasificacionesPorInscripcion = $clasificaciones->keyBy(fn (Clasificacion $item) => $this->clasificacionInscripcionId($item));
+        $clasificacionesPorInscripcion = $clasificaciones->groupBy(fn (Clasificacion $item) => $this->clasificacionInscripcionId($item));
 
         return $sorteo->detalles
             ->filter(fn ($detalle) => $detalle->estado !== 'directo')
@@ -2405,10 +2491,10 @@ class ClasificacionConsolidacionService
                     ->map(fn ($detalle) => (int) ($detalle->inscripcion_id ?? 0))
                     ->filter()
                     ->values();
-                $clasificacion = $inscripcionIds
-                    ->map(fn (int $inscripcionId) => $clasificacionesPorInscripcion->get($inscripcionId))
-                    ->filter()
-                    ->first();
+                $clasificacion = $this->resolverClasificacionEnfrentamientoEnVivo(
+                    $inscripcionIds,
+                    $clasificacionesPorInscripcion
+                );
 
                 if (! $clasificacion) {
                     return null;
@@ -2448,6 +2534,26 @@ class ClasificacionConsolidacionService
             ->filter()
             ->values()
             ->all();
+    }
+
+    private function resolverClasificacionEnfrentamientoEnVivo(Collection $inscripcionIds, Collection $clasificacionesPorInscripcion): ?Clasificacion
+    {
+        $candidatas = $inscripcionIds
+            ->flatMap(function (int $inscripcionId) use ($clasificacionesPorInscripcion) {
+                return $clasificacionesPorInscripcion->get($inscripcionId, collect());
+            })
+            ->filter(fn ($item) => $item instanceof Clasificacion)
+            ->values();
+
+        if ($candidatas->isEmpty()) {
+            return null;
+        }
+
+        return $candidatas->first(function (Clasificacion $clasificacion) {
+            $payload = $clasificacion->detalle_json['evaluaciones'][0]['payload_json'] ?? null;
+
+            return is_array($payload) && ! empty($payload);
+        }) ?? $candidatas->sortBy('posicion')->first();
     }
 
     private function formatearResultadoEnfrentamiento(Clasificacion $clasificacion, ConfigCalificacion $config): string
