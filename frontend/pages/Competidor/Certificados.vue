@@ -20,7 +20,7 @@ defineProps({
 <template>
   <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
     <section>
-      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis Certificados</h1>
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis certificados</h1>
       <p class="mt-1 text-sm text-slate-500">
         Descarga los certificados generados según tus resultados o tu estado de participación.
       </p>

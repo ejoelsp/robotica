@@ -10,6 +10,7 @@ use App\Modules\Admin\AsignacionJueces\Requests\StoreAsignacionJuezRequest;
 use App\Modules\Admin\AsignacionJueces\Requests\UpdateAsignacionJuezRequest;
 use App\Modules\Admin\AsignacionJueces\Requests\UpdateConfigJuecesCompetenciaRequest;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
@@ -18,17 +19,22 @@ use Inertia\Response;
 
 class AsignacionJuezController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
-        $competencia = DB::table('catalogo.competencias')
-            ->where('estado', true)
-            ->orderByDesc('id')
-            ->select('id', 'nombre', 'estado')
-            ->first()
-            ?? DB::table('catalogo.competencias')
+        $request->validate(['competencia_id' => ['nullable', 'integer', 'min:1']]);
+        $competencia = $request->filled('competencia_id')
+            ? DB::table('catalogo.competencias')->where('id', $request->integer('competencia_id'))->first(['id', 'nombre', 'estado'])
+            : (DB::table('catalogo.competencias')
+                ->where('estado', true)
                 ->orderByDesc('id')
                 ->select('id', 'nombre', 'estado')
-                ->first();
+                ->first()
+                ?? DB::table('catalogo.competencias')
+                    ->orderByDesc('id')
+                    ->select('id', 'nombre', 'estado')
+                    ->first());
+
+        abort_if($request->filled('competencia_id') && ! $competencia, 404, 'La competencia seleccionada no existe.');
 
         $competenciaId = $competencia?->id;
 
@@ -226,7 +232,7 @@ class AsignacionJuezController extends Controller
         );
 
         return redirect()
-            ->route('admin.asignacion_jueces.index', [], 303)
+            ->route('admin.asignacion_jueces.index', ['competencia_id' => $data['competencia_id']], 303)
             ->with('success', 'Configuración de jueces actualizada correctamente.');
     }
 
@@ -253,7 +259,7 @@ class AsignacionJuezController extends Controller
         });
 
         return redirect()
-            ->route('admin.asignacion_jueces.index', [], 303)
+            ->route('admin.asignacion_jueces.index', ['competencia_id' => Categoria::query()->whereKey($data['categoria_id'])->value('competencia_id')], 303)
             ->with('success', 'Asignación creada correctamente.');
     }
 
@@ -284,7 +290,7 @@ class AsignacionJuezController extends Controller
         });
 
         return redirect()
-            ->route('admin.asignacion_jueces.index', [], 303)
+            ->route('admin.asignacion_jueces.index', ['competencia_id' => Categoria::query()->whereKey($data['categoria_id'])->value('competencia_id')], 303)
             ->with('success', 'Asignación actualizada correctamente.');
     }
 

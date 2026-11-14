@@ -2,7 +2,11 @@ import { createApp, h } from "vue";
 import { createInertiaApp, router } from "@inertiajs/vue3";
 import axios from "axios";
 import "../frontend/styles/app.css";
+import "./styles/admin-shell.css";
 import "./lib/echo";
+import { initializePanelTheme } from "./lib/panelTheme";
+
+initializePanelTheme();
 
 // layout global
 import AppLayout from "./layouts/AppLayout.vue";

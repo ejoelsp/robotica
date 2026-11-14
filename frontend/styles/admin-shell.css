@@ -1,0 +1,39 @@
+/* El tema claro conserva las utilidades y colores actuales. */
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .panel-shell {
+  background-color: #0b1220;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .panel-sidebar {
+  background-color: #0f172a;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .panel-topbar {
+  background-color: #111b2e;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .format-category-scroll {
+  scrollbar-color: #475569 #111b2e;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .format-category-scroll::-webkit-scrollbar-track {
+  background: #111b2e;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) .format-category-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-color: #111b2e;
+}
+
+:is(html[data-admin-theme="dark"], html[data-competidor-theme="dark"]) :is(input, select, textarea):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]) {
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(html[data-admin-theme], html[data-competidor-theme]) *,
+  :is(html[data-admin-theme], html[data-competidor-theme]) *::before,
+  :is(html[data-admin-theme], html[data-competidor-theme]) *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

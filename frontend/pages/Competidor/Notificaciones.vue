@@ -51,7 +51,13 @@ const canalLabels = {
   app_email: "Aplicación y correo",
 };
 
-function markAsRead(id) {
+function notifyCounter() {
+  window.dispatchEvent(new CustomEvent('competidor-notificaciones:actualizar-contador', {
+    detail: { noLeidas: dashboardStats.value.noLeidas },
+  }));
+}
+
+async function markAsRead(id) {
   if (!id) return;
 
   const target = recibidas.value.find((item) => item.id === id);
@@ -59,27 +65,30 @@ function markAsRead(id) {
 
   target.leido = true;
   dashboardStats.value.noLeidas = Math.max(0, Number(dashboardStats.value.noLeidas ?? 0) - 1);
+  notifyCounter();
 
-  fetch(`/notificaciones/${id}/leer`, {
-    method: "PATCH",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Requested-With": "XMLHttpRequest",
-      "X-XSRF-TOKEN": decodeURIComponent(
-        document.cookie
-          .split("; ")
-          .find((row) => row.startsWith("XSRF-TOKEN="))
-          ?.split("=")[1] ?? ""
-      ),
-    },
-    body: JSON.stringify({}),
-  }).then((response) => {
-    if (!response.ok) {
-      target.leido = false;
-      dashboardStats.value.noLeidas = Number(dashboardStats.value.noLeidas ?? 0) + 1;
-    }
-  });
+  try {
+    const response = await fetch(`/notificaciones/${id}/leer`, {
+      method: "PATCH",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+        "X-XSRF-TOKEN": decodeURIComponent(
+          document.cookie
+            .split("; ")
+            .find((row) => row.startsWith("XSRF-TOKEN="))
+            ?.split("=")[1] ?? ""
+        ),
+      },
+      body: JSON.stringify({}),
+    });
+    if (!response.ok) throw new Error('No se pudo marcar la notificación como leída.');
+  } catch {
+    target.leido = false;
+    dashboardStats.value.noLeidas = Number(dashboardStats.value.noLeidas ?? 0) + 1;
+    notifyCounter();
+  }
 }
 
 function typeMeta(type) {
@@ -99,7 +108,7 @@ function typeMeta(type) {
 <template>
   <div class="space-y-5 px-3 py-5 sm:space-y-6 sm:px-0 sm:py-0">
     <div>
-      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis Notificaciones</h1>
+      <h1 class="text-xl font-bold text-slate-900 sm:text-2xl">Mis notificaciones</h1>
       <p class="text-sm text-slate-500 mt-1">Consulta los avisos enviados por el sistema y administración</p>
     </div>
 

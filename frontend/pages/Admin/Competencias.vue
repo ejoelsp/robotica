@@ -631,6 +631,13 @@ watch([isModalOpen, isDeleteConfirmOpen, isCommitteeModalOpen], ([formOpen, dele
   document.body.style.overflow = formOpen || deleteOpen || committeeOpen ? "hidden" : "";
 });
 
+watch(() => page.url, (url) => {
+  const id = Number(new URLSearchParams(url.split('?')[1] ?? '').get('comite'));
+  if (!Number.isInteger(id) || id <= 0) return;
+  const competition = competencias.value.find((item) => Number(item.id) === id);
+  if (competition) openCommitteeModal(competition);
+}, { immediate: true });
+
 onBeforeUnmount(() => {
   document.body.style.overflow = "";
   clearTimeout(feedbackTimer);

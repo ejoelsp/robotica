@@ -44,7 +44,7 @@ class NotificacionController extends Controller
             'notificacionesRecibidas' => $recibidas,
             'stats' => [
                 'recibidas' => $recibidas->count(),
-                'noLeidas' => $recibidas->where('leido', false)->count(),
+                'noLeidas' => Notificacion::query()->where('user_id', $request->user()->id)->where('leido', false)->count(),
             ],
         ]);
     }
@@ -59,6 +59,11 @@ class NotificacionController extends Controller
         return response()->json([
             'no_leidas' => $noLeidas,
         ]);
+    }
+
+    public function contadorCompetidor(Request $request)
+    {
+        return $this->contadorAdmin($request);
     }
 
     public function store(Request $request)

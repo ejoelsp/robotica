@@ -16,9 +16,11 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 class AdminInscripcionController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $competenciaSeleccionada = $this->competenciaSeleccionada($request);
         $inscripcionModels = Inscripcion::query()
+            ->when($competenciaSeleccionada, fn ($query) => $query->where('competencia_id', $competenciaSeleccionada['id']))
             ->with([
                 'equipo:id,nombre,institucion',
                 'categoria:id,nombre,costo_inscripcion',
@@ -87,6 +89,7 @@ class AdminInscripcionController extends Controller
 
         $categories = Categoria::query()
             ->select('id', 'nombre')
+            ->when($competenciaSeleccionada, fn ($query) => $query->where('competencia_id', $competenciaSeleccionada['id']))
             ->when($competitionIds->isNotEmpty(), fn ($query) => $query->whereIn('competencia_id', $competitionIds))
             ->orderBy('nombre')
             ->get()
@@ -163,6 +166,7 @@ class AdminInscripcionController extends Controller
             'stats' => $stats,
             'pendingPayments' => $pendingPayments,
             'configuracionPago' => $this->configuracionPagoActiva(),
+            'competenciaSeleccionada' => $competenciaSeleccionada,
         ]);
     }
 
@@ -281,12 +285,14 @@ class AdminInscripcionController extends Controller
 
     public function export(Request $request)
     {
+        $competenciaSeleccionada = $this->competenciaSeleccionada($request);
         $format = strtolower((string) $request->query('format', 'csv'));
         $filter = (string) $request->query('filter', 'all');
         $categoryId = (int) $request->query('category_id', 0);
         $q = trim((string) $request->query('q', ''));
 
         $query = Inscripcion::query()
+            ->when($competenciaSeleccionada, fn ($query) => $query->where('competencia_id', $competenciaSeleccionada['id']))
             ->with([
                 'equipo:id,nombre,institucion',
                 'categoria:id,nombre,costo_inscripcion',
@@ -426,6 +432,19 @@ class AdminInscripcionController extends Controller
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
+    }
+
+    private function competenciaSeleccionada(Request $request): ?array
+    {
+        $data = $request->validate(['competencia_id' => ['nullable', 'integer', 'min:1']]);
+        if (! isset($data['competencia_id'])) {
+            return null;
+        }
+
+        $competencia = DB::table('catalogo.competencias')->where('id', (int) $data['competencia_id'])->first(['id', 'nombre']);
+        abort_unless($competencia, 404, 'La competencia seleccionada no existe.');
+
+        return ['id' => (int) $competencia->id, 'nombre' => (string) $competencia->nombre];
     }
 
     protected function paymentBatchKey(Inscripcion $inscripcion): string

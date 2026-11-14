@@ -97,7 +97,7 @@ function statusClasses(item) {
   <div class="w-full">
     <div class="mx-auto w-full max-w-[1180px] space-y-5 px-3 py-5 sm:space-y-6 sm:px-6 sm:py-6 lg:px-4">
       <section>
-        <h1 class="text-2xl font-bold text-slate-900">Mis Resultados</h1>
+        <h1 class="text-2xl font-bold text-slate-900">Mis resultados</h1>
         <p class="mt-1 text-sm text-slate-500">
           Consulta el resultado obtenido en las categorías con inscripción aprobada.
         </p>

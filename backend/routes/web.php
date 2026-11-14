@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Publico\LiveResultadosController;
 use App\Http\Controllers\Admin\ControlAccesoController;
+use App\Modules\Admin\Dashboard\Http\Controllers\DashboardController;
 use App\Modules\Admin\Competencias\Http\Controllers\CompetenciaController;
 use App\Modules\Admin\Competencias\Http\Controllers\ComiteOrganizadorController;
 use App\Modules\Admin\Categorias\Http\Controllers\CategoriaController;
@@ -186,7 +187,9 @@ Route::post('/activar-cuenta', [ActivacionCuentaController::class, 'store'])
 // ==============================
 Route::middleware('auth')->group(function () {
 
-    Route::get('/dashboard', fn () => redirect()->route('competidor.mis-inscripciones'))
+    Route::get('/dashboard', fn (Request $request) => redirect()->route(
+        (int) $request->user()->role_id === 1 ? 'admin.dashboard.redirect' : 'competidor.mis-inscripciones'
+    ))
         ->name('dashboard.redirect');
 
     // Perfil
@@ -207,7 +210,10 @@ Route::middleware('auth')->group(function () {
         ->middleware(EnsureRole::class . ':admin')
         ->group(function () {
 
-            Route::get('/dashboard', fn () => redirect()->route('admin.competencias.index'))
+            Route::get('/', fn () => redirect()->route('admin.dashboard.redirect'))
+                ->name('index');
+
+            Route::get('/dashboard', [DashboardController::class, 'index'])
                 ->name('dashboard.redirect');
 
             // Perfil admin
@@ -563,6 +569,9 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/competidor/notificaciones', [NotificacionController::class, 'competidorIndex'])
         ->name('competidor.notificaciones');
+
+    Route::get('/competidor/notificaciones/contador', [NotificacionController::class, 'contadorCompetidor'])
+        ->name('competidor.notificaciones.contador');
 
     Route::get('/competidor/resultados', [CompetidorResultadoController::class, 'index'])
         ->name('competidor.resultados');

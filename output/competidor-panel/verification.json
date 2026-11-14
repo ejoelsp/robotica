@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "results": [
+    "Panel en cinco tamaños y ambos temas; menús, foco y desplazamiento sin desbordamiento",
+    "Los seis módulos, incluido Mi perfil, conservan la barra y ambos temas",
+    "Campana y notificaciones sincronizadas; recuperación del contador ante error de red",
+    "Formulario existente de inscripción conserva su flujo y aplica el tema oscuro en Teleport",
+    "Administrador conserva su barra y su tema independiente",
+    "Cerrar sesión envía POST y retira el tema del panel al salir"
+  ],
+  "errors": []
+}

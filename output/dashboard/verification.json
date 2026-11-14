@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "results": [
+    "Diseño y ambos temas a 320, 390, 768, 1024 y 1440 px; sin desbordamiento ni cifras inválidas",
+    "Selector cambia los datos y maneja una competencia sin inscripciones",
+    "Paginación funcional con contexto de competencia",
+    "Los once accesos abren las pantallas existentes; comité y generación manual abren su sección",
+    "Estado sin competencias con accesos válidos"
+  ],
+  "errors": []
+}

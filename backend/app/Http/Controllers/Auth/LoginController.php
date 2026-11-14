@@ -128,7 +128,7 @@ class LoginController extends Controller
 
         switch ((int) $user->role_id) {
             case 1:
-                return redirect()->route('admin.competencias.index');
+                return redirect()->route('admin.dashboard.redirect');
 
             case 2:
                 if (empty($user->photo_path)) {

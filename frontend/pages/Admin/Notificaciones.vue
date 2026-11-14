@@ -48,7 +48,12 @@ const props = defineProps({
 });
 
 const page = usePage();
-const activeTab = ref("enviadas");
+const requestedTab = () => new URLSearchParams(page.url.split('?')[1] ?? '').get('tab');
+const activeTab = ref(requestedTab() === 'recibidas' ? 'recibidas' : 'enviadas');
+
+watch(() => page.url, () => {
+  if (requestedTab() === 'recibidas') activeTab.value = 'recibidas';
+});
 const isModalOpen = ref(false);
 
 const flashSuccess = computed(() => page.props.flash?.success ?? null);

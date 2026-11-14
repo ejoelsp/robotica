@@ -314,6 +314,11 @@ class AnalisisHistoricoService
         return $this->scopeListoParaCierre(collect([(int) $competenciaId]));
     }
 
+    public function progresoCierreCompetencia(int $competenciaId): array
+    {
+        return $this->progresoCierre(collect([$competenciaId]));
+    }
+
     private function scopeListoParaCierre(Collection $competenciaIds): bool
     {
         $progreso = $this->progresoCierre($competenciaIds);

@@ -1,3 +1,5 @@
+import adminTheme from './styles/admin-theme.cjs';
+
 export default {
   content: [
     "../backend/resources/views/**/*.blade.php",
@@ -6,6 +8,6 @@ export default {
     "./layouts/**/*.{vue,js}",
   ],
   theme: { extend: {} },
-  plugins: [require("@tailwindcss/line-clamp")],
+  plugins: [require("@tailwindcss/line-clamp"), adminTheme],
 };
 

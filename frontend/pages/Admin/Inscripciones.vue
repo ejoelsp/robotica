@@ -343,6 +343,7 @@ function exportCSV() {
     category_id: filterCategoryId.value === "all" ? "" : String(filterCategoryId.value),
     q: searchTerm.value?.trim() || "",
   });
+  if (page.props.competenciaSeleccionada?.id) params.set('competencia_id', String(page.props.competenciaSeleccionada.id));
   window.location.href = `/admin/inscripciones/export?${params.toString()}`;
   closeExportMenu();
 }
@@ -353,6 +354,7 @@ function exportExcel() {
     category_id: filterCategoryId.value === "all" ? "" : String(filterCategoryId.value),
     q: searchTerm.value?.trim() || "",
   });
+  if (page.props.competenciaSeleccionada?.id) params.set('competencia_id', String(page.props.competenciaSeleccionada.id));
   window.location.href = `/admin/inscripciones/export?${params.toString()}`;
   closeExportMenu();
 }
@@ -368,6 +370,7 @@ function exportExcel() {
       <p class="text-sm text-slate-500">
         Administra las inscripciones de equipos y participantes
       </p>
+      <p v-if="page.props.competenciaSeleccionada" class="mt-2 text-sm font-medium text-blue-700">Competencia: {{ page.props.competenciaSeleccionada.nombre }}</p>
     </div>
 
     <!-- Configuracion de pago -->

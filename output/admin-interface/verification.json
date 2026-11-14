@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "results": [
+    "Menú: apertura, flechas, Escape, restauración del foco y clic exterior",
+    "Competencias: temas y ancho sin desbordamiento a 320, 390, 768, 1024 y 1440 px; menú móvil y foco",
+    "Tema oscuro conservado al recargar",
+    "Diez módulos adicionales: barra y navegación, persistencia y ambos temas a 320 y 1440 px",
+    "Campana abre las notificaciones recibidas; acceso al perfil desde el desplegable",
+    "Modal de competencia renderizado en tema oscuro",
+    "Cerrar sesión envía POST y el tema administrativo se retira al salir del panel"
+  ],
+  "errors": []
+}
